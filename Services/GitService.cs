@@ -1,0 +1,221 @@
+using System.Text;
+using CliWrap;
+using CliWrap.Buffered;
+using DiffThis.Models;
+
+namespace DiffThis.Services;
+
+public class GitService : IGitService
+{
+    public bool IsGitRepository(string path) =>
+        Directory.Exists(path) &&
+        (Directory.Exists(Path.Combine(path, ".git")) || File.Exists(Path.Combine(path, ".git")));
+
+    public async Task<List<string>> GetBranchesAsync(string repositoryPath, CancellationToken ct = default)
+    {
+        var result = await Cli.Wrap("git")
+            .WithArguments(["branch", "-a", "--format=%(refname:short)"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(ct);
+
+        if (result.ExitCode != 0) return [];
+
+        return result.StandardOutput
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(b => b.Trim())
+            .Where(b => b.Length > 0 && !b.StartsWith("HEAD ->"))
+            .Distinct()
+            .OrderBy(b => b.StartsWith("origin/") ? 1 : 0)
+            .ThenBy(b => b)
+            .ToList();
+    }
+
+    public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default)
+    {
+        var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
+
+        var statResult = await Cli.Wrap("git")
+            .WithArguments(["diff", "--numstat", $"{baseBranch}...{compareBranch}"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+
+        if (statResult.ExitCode != 0)
+            throw new InvalidOperationException(
+                statResult.StandardError.Trim() is { Length: > 0 } err ? err
+                : $"git diff --numstat exited with code {statResult.ExitCode}");
+
+        var nameStatusResult = await Cli.Wrap("git")
+            .WithArguments(["diff", "--name-status", $"{baseBranch}...{compareBranch}"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+
+        var diffResult = await Cli.Wrap("git")
+            .WithArguments(["diff", "--unified=3", $"{baseBranch}...{compareBranch}"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+
+        var statMap = ParseNumstat(statResult.StandardOutput);
+        var statusMap = ParseNameStatus(nameStatusResult.StandardOutput);
+        var files = ParseUnifiedDiff(diffResult.StandardOutput, statMap, statusMap);
+
+        return new DiffResult
+        {
+            RepositoryPath = repositoryPath,
+            RepositoryName = repoName,
+            BaseBranch = baseBranch,
+            CompareBranch = compareBranch,
+            Files = files
+        };
+    }
+
+    private static Dictionary<string, (int additions, int deletions)> ParseNumstat(string output)
+    {
+        var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length < 3) continue;
+            if (int.TryParse(parts[0], out var add) && int.TryParse(parts[1], out var del))
+                result[parts[2].Trim()] = (add, del);
+        }
+        return result;
+    }
+
+    private static Dictionary<string, DiffFileStatus> ParseNameStatus(string output)
+    {
+        var result = new Dictionary<string, DiffFileStatus>(StringComparer.Ordinal);
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.Length < 2) continue;
+            var status = line[0] switch
+            {
+                'A' => DiffFileStatus.Added,
+                'D' => DiffFileStatus.Deleted,
+                'R' => DiffFileStatus.Renamed,
+                'C' => DiffFileStatus.Copied,
+                _ => DiffFileStatus.Modified
+            };
+            var parts = line[1..].Trim().Split('\t');
+            var path = parts.Length > 1 ? parts[1] : parts[0];
+            result[path.Trim()] = status;
+        }
+        return result;
+    }
+
+    private static List<DiffFile> ParseUnifiedDiff(
+        string diffOutput,
+        Dictionary<string, (int additions, int deletions)> statMap,
+        Dictionary<string, DiffFileStatus> statusMap)
+    {
+        var files = new List<DiffFile>();
+        DiffFile? currentFile = null;
+        DiffHunk? currentHunk = null;
+        int oldLine = 0, newLine = 0;
+
+        foreach (var rawLine in diffOutput.Split('\n'))
+        {
+            if (rawLine.StartsWith("diff --git "))
+            {
+                if (currentFile != null) files.Add(currentFile);
+                currentHunk = null;
+                currentFile = new DiffFile();
+                continue;
+            }
+
+            if (currentFile == null) continue;
+
+            if (rawLine.StartsWith("--- a/") || rawLine.StartsWith("--- /dev/null"))
+            {
+                currentFile.OldPath = rawLine.StartsWith("--- a/") ? rawLine[6..] : string.Empty;
+                continue;
+            }
+            if (rawLine.StartsWith("+++ b/") || rawLine.StartsWith("+++ /dev/null"))
+            {
+                currentFile.NewPath = rawLine.StartsWith("+++ b/") ? rawLine[6..] : string.Empty;
+                var key = currentFile.NewPath.Length > 0 ? currentFile.NewPath : currentFile.OldPath;
+                if (statMap.TryGetValue(key, out var stats))
+                {
+                    currentFile.Additions = stats.additions;
+                    currentFile.Deletions = stats.deletions;
+                }
+                if (statusMap.TryGetValue(key, out var fileStatus))
+                    currentFile.Status = fileStatus;
+                else if (currentFile.NewPath.Length == 0) currentFile.Status = DiffFileStatus.Deleted;
+                else if (currentFile.OldPath.Length == 0) currentFile.Status = DiffFileStatus.Added;
+                continue;
+            }
+
+            if (rawLine.StartsWith("Binary files"))
+            {
+                currentFile.IsBinary = true;
+                continue;
+            }
+
+            if (rawLine.StartsWith("@@ "))
+            {
+                currentHunk = ParseHunkHeader(rawLine);
+                if (currentHunk != null)
+                {
+                    currentFile.Hunks.Add(currentHunk);
+                    oldLine = currentHunk.OldStart;
+                    newLine = currentHunk.NewStart;
+                }
+                continue;
+            }
+
+            if (currentHunk == null || rawLine.Length == 0) continue;
+
+            if (rawLine.StartsWith("-"))
+            {
+                currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Deletion, Content = rawLine[1..], OldLineNumber = oldLine++ });
+            }
+            else if (rawLine.StartsWith("+"))
+            {
+                currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Addition, Content = rawLine[1..], NewLineNumber = newLine++ });
+            }
+            else if (rawLine.StartsWith(" ") || rawLine.StartsWith("\\"))
+            {
+                var content = rawLine.StartsWith(" ") ? rawLine[1..] : rawLine;
+                currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Context, Content = content, OldLineNumber = oldLine++, NewLineNumber = newLine++ });
+            }
+        }
+
+        if (currentFile != null) files.Add(currentFile);
+        return files;
+    }
+
+    private static DiffHunk? ParseHunkHeader(string line)
+    {
+        // Format: @@ -oldStart,oldCount +newStart,newCount @@ context
+        try
+        {
+            var atAt = line.IndexOf(" @@", 3);
+            var inner = line[3..(atAt > 0 ? atAt : line.Length)].Trim();
+            var context = atAt > 0 ? line[(atAt + 3)..].Trim() : string.Empty;
+
+            var parts = inner.Split(' ');
+            if (parts.Length < 2) return null;
+
+            var (oldStart, oldCount) = ParseRange(parts[0].TrimStart('-'));
+            var (newStart, newCount) = ParseRange(parts[1].TrimStart('+'));
+
+            return new DiffHunk
+            {
+                OldStart = oldStart, OldCount = oldCount,
+                NewStart = newStart, NewCount = newCount,
+                Context = context
+            };
+        }
+        catch { return null; }
+    }
+
+    private static (int start, int count) ParseRange(string range)
+    {
+        var parts = range.Split(',');
+        return (int.Parse(parts[0]), parts.Length > 1 ? int.Parse(parts[1]) : 1);
+    }
+}

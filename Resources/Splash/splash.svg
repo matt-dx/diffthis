@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- D -->
+  <rect x="8" y="24" width="10" height="80" rx="4" fill="#C9D1D9"/>
+  <rect x="8" y="24" width="50" height="10" rx="4" fill="#C9D1D9"/>
+  <rect x="8" y="94" width="50" height="10" rx="4" fill="#C9D1D9"/>
+  <rect x="48" y="34" width="10" height="60" rx="4" fill="#C9D1D9"/>
+  <!-- i and T suggestion via diff colors -->
+  <rect x="72" y="24" width="48" height="6" rx="3" fill="#56D364"/>
+  <rect x="72" y="36" width="36" height="6" rx="3" fill="#FF7B72"/>
+  <rect x="72" y="48" width="42" height="6" rx="3" fill="#56D364"/>
+  <rect x="72" y="60" width="30" height="6" rx="3" fill="#C9D1D9"/>
+  <rect x="72" y="72" width="48" height="6" rx="3" fill="#56D364"/>
+  <rect x="72" y="84" width="24" height="6" rx="3" fill="#FF7B72"/>
+  <rect x="72" y="96" width="38" height="6" rx="3" fill="#C9D1D9"/>
+</svg>

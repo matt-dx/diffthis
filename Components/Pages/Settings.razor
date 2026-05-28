@@ -1,0 +1,72 @@
+@page "/settings"
+@inject ISettingsService Svc
+
+<div class="page narrow">
+    <a class="back-link" href="/">← Repositories</a>
+    <h1 class="page-h1">Settings</h1>
+
+    <section class="settings-section">
+        <p class="section-title">Appearance</p>
+        <div class="setting-card">
+            <label class="setting-label">Theme</label>
+            <div class="theme-selector">
+                <button class="theme-btn @Active(AppTheme.Unspecified)"
+                        @onclick='() => SetTheme(AppTheme.Unspecified)'>System</button>
+                <button class="theme-btn @Active(AppTheme.Light)"
+                        @onclick='() => SetTheme(AppTheme.Light)'>&#x2600; Light</button>
+                <button class="theme-btn @Active(AppTheme.Dark)"
+                        @onclick='() => SetTheme(AppTheme.Dark)'>&#x1F319; Dark</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Repository History</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Recent repositories to show</p>
+                    <p class="setting-desc">Maximum shown on the home screen</p>
+                </div>
+                <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
+                    @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
+                    {
+                        <option value="@n">@n</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">About</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">DiffThis</p>
+                    <p class="setting-desc">Git branch diff viewer</p>
+                    <a class="setting-desc" href="https://github.com/matt-dx/diffthis" target="_blank">github.com/matt-dx/diffthis</a>
+                </div>
+                <code class="version-badge">@AppInfo.Current.VersionString (@AppInfo.Current.BuildString)</code>
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private int maxRecent;
+
+    protected override void OnInitialized() =>
+        maxRecent = Svc.MaxRecentRepositories;
+
+    private void SetTheme(AppTheme theme)
+    {
+        Svc.Theme = theme;
+        StateHasChanged();
+    }
+
+    private void SaveMaxRecent() =>
+        Svc.MaxRecentRepositories = maxRecent;
+
+    private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";
+}

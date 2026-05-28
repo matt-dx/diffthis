@@ -1,0 +1,201 @@
+@page "/diff"
+@inject DiffSessionService Session
+@inject IExportService Export
+@inject ISettingsService Settings
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (diff is null)
+{
+    <div class="page"><p>No diff loaded. <a href="/">Go home</a></p></div>
+}
+else
+{
+    <div class="diff-page">
+
+        <!-- Toolbar -->
+        <div class="diff-toolbar">
+            <div class="toolbar-title">
+                <span class="tname">@diff.RepositoryName</span>
+                <span class="sep">:</span>
+                <code>@diff.BaseBranch</code>
+                <span class="arrow">→</span>
+                <code>@diff.CompareBranch</code>
+            </div>
+            <div class="toolbar-summary">
+                <span>@diff.Files.Count files</span>
+                <span class="add">+@diff.TotalAdditions</span>
+                <span class="del">-@diff.TotalDeletions</span>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
+                <button class="btn btn-sm" @onclick="ExportHtml">Export HTML</button>
+                <a class="btn btn-sm" href="/settings">Settings</a>
+            </div>
+        </div>
+
+        <div class="diff-layout">
+
+            <!-- File sidebar -->
+            <aside class="file-sidebar">
+                <div class="sidebar-heading">Changed Files</div>
+                @foreach (var (file, i) in diff.Files.Select((f, i) => (f, i)))
+                {
+                    <div class="file-item @(selectedIndex == i ? "active" : "")"
+                         @onclick="() => ScrollToFile(i)">
+                        <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
+                        <div class="file-info">
+                            <span class="file-name">@file.FileName</span>
+                            @if (!string.IsNullOrEmpty(file.FileDirectory))
+                            {
+                                <span class="file-dir">@file.FileDirectory</span>
+                            }
+                        </div>
+                        <div class="file-stats">
+                            <span class="add">+@file.Additions</span>
+                            <span class="del">-@file.Deletions</span>
+                        </div>
+                    </div>
+                }
+            </aside>
+
+            <!-- Diff content -->
+            <div class="diff-content">
+                @if (diff.Files.Count == 0)
+                {
+                    <div class="diff-empty">
+                        <p class="diff-empty-title">No differences found</p>
+                        <p class="diff-empty-sub">
+                            <code>@diff.BaseBranch</code> and <code>@diff.CompareBranch</code> are identical at their merge base.
+                        </p>
+                        <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(diff.RepositoryPath)">← Change branches</a>
+                    </div>
+                }
+                @foreach (var (file, i) in diff.Files.Select((f, i) => (f, i)))
+                {
+                    <div class="diff-file" id="file-@i">
+                        <div class="file-header">
+                            <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
+                            <span class="file-path">
+                                <span class="dir">@file.FileDirectory</span><strong>@file.FileName</strong>
+                            </span>
+                            <span class="file-stats ml-auto">
+                                <span class="add">+@file.Additions</span>
+                                <span class="del">-@file.Deletions</span>
+                            </span>
+                        </div>
+
+                        @if (file.IsBinary)
+                        {
+                            <div class="diff-note">Binary file</div>
+                        }
+                        else if (file.Hunks.Count == 0)
+                        {
+                            <div class="diff-note">No textual changes</div>
+                        }
+                        else
+                        {
+                            foreach (var hunk in file.Hunks)
+                            {
+                                <div class="hunk-header">
+                                    @($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@")
+                                    @if (!string.IsNullOrEmpty(hunk.Context))
+                                    {
+                                        <span class="hunk-ctx">@hunk.Context</span>
+                                    }
+                                </div>
+                                <table class="diff-table">
+                                    <tbody>
+                                        @foreach (var line in hunk.Lines)
+                                        {
+                                            <tr class="@LineCss(line.Type)">
+                                                <td class="ln">@line.OldLineNumber</td>
+                                                <td class="ln">@line.NewLineNumber</td>
+                                                <td class="sign">@LineSign(line.Type)</td>
+                                                <td class="code">@line.Content</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    private DiffResult? diff;
+    private int selectedIndex = -1;
+
+    protected override void OnInitialized()
+    {
+        diff = Session.CurrentDiff;
+        if (diff is null) Nav.NavigateTo("/");
+    }
+
+    private async Task ScrollToFile(int index)
+    {
+        selectedIndex = index;
+        await JS.InvokeVoidAsync("scrollToElement", $"file-{index}");
+    }
+
+    private async Task ExportMarkdown()
+    {
+        if (diff is null) return;
+        var path = ExportPath("md");
+        await Export.ExportMarkdownAsync(diff, path);
+        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}");
+    }
+
+    private async Task ExportHtml()
+    {
+        if (diff is null) return;
+        var dark = Settings.Theme == AppTheme.Dark;
+        var path = ExportPath("html");
+        await Export.ExportHtmlAsync(diff, path, dark);
+        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}\n\nOpen in a browser → print to PDF.");
+    }
+
+    private string ExportPath(string ext)
+    {
+        var name = $"diff_{diff!.BaseBranch}_{diff.CompareBranch}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
+            .Replace('/', '-').Replace('\\', '-');
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), name);
+    }
+
+    private static string LineCss(DiffLineType t) => t switch
+    {
+        DiffLineType.Addition => "add-line",
+        DiffLineType.Deletion => "del-line",
+        _                     => "ctx-line"
+    };
+
+    private static string LineSign(DiffLineType t) => t switch
+    {
+        DiffLineType.Addition => "+",
+        DiffLineType.Deletion => "-",
+        _                     => " "
+    };
+
+    private static string StatusCss(DiffFileStatus s) => s switch
+    {
+        DiffFileStatus.Added    => "badge-added",
+        DiffFileStatus.Deleted  => "badge-deleted",
+        DiffFileStatus.Renamed  => "badge-renamed",
+        DiffFileStatus.Copied   => "badge-copied",
+        _                       => "badge-modified"
+    };
+
+    private static string StatusLabel(DiffFileStatus s) => s switch
+    {
+        DiffFileStatus.Added    => "A",
+        DiffFileStatus.Deleted  => "D",
+        DiffFileStatus.Renamed  => "R",
+        DiffFileStatus.Copied   => "C",
+        _                       => "M"
+    };
+}

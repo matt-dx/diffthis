@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Left column: del lines -->
+  <rect x="12" y="28" width="32" height="6" rx="3" fill="#FF7B72"/>
+  <rect x="12" y="40" width="24" height="6" rx="3" fill="#FF7B72"/>
+  <rect x="12" y="52" width="28" height="6" rx="3" fill="#56D364"/>
+  <rect x="12" y="64" width="20" height="6" rx="3" fill="#56D364"/>
+  <!-- Right column: add lines -->
+  <rect x="56" y="28" width="32" height="6" rx="3" fill="#56D364"/>
+  <rect x="56" y="40" width="20" height="6" rx="3" fill="#56D364"/>
+  <rect x="56" y="52" width="28" height="6" rx="3" fill="#FF7B72"/>
+  <rect x="56" y="64" width="24" height="6" rx="3" fill="#C9D1D9"/>
+  <!-- Divider -->
+  <rect x="48" y="20" width="4" height="60" rx="2" fill="#30363D"/>
+</svg>

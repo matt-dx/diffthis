@@ -1,0 +1,47 @@
+@inject ISettingsService Settings
+@inject IJSRuntime JS
+
+<div class="app-root">
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        </Found>
+        <NotFound>
+            <MainLayout>
+                <div class="page narrow">
+                    <p>Page not found. <a href="/">Go home</a></p>
+                </div>
+            </MainLayout>
+        </NotFound>
+    </Router>
+</div>
+
+@code {
+    private string ResolvedTheme => Settings.Theme switch
+    {
+        AppTheme.Dark  => "dark",
+        AppTheme.Light => "light",
+        _ => Application.Current?.RequestedTheme == AppTheme.Dark ? "dark" : "light"
+    };
+
+    protected override void OnInitialized()
+    {
+        Settings.ThemeChanged += OnThemeChanged;
+        if (Application.Current != null)
+            Application.Current.RequestedThemeChanged += OnSystemThemeChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await ApplyTheme();
+    }
+
+    private void OnThemeChanged() => InvokeAsync(ApplyTheme);
+
+    private void OnSystemThemeChanged(object? sender, AppThemeChangedEventArgs e) =>
+        InvokeAsync(ApplyTheme);
+
+    private async Task ApplyTheme() =>
+        await JS.InvokeVoidAsync("setTheme", ResolvedTheme);
+}

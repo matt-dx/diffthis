@@ -1,0 +1,111 @@
+@page "/branches"
+@inject IGitService GitService
+@inject DiffSessionService Session
+@inject NavigationManager Nav
+
+<div class="page narrow">
+    <a class="back-link" href="/">← Repositories</a>
+
+    <h1 class="page-h1">Select Branches</h1>
+    @if (!string.IsNullOrEmpty(repoName))
+    {
+        <p class="repo-label">@repoName</p>
+    }
+
+    @if (loading)
+    {
+        <div class="loading">Loading branches…</div>
+    }
+    else if (!string.IsNullOrEmpty(loadError))
+    {
+        <div class="error-banner">@loadError</div>
+    }
+    else
+    {
+        <div class="branch-picker">
+            <div class="branch-col">
+                <label>Base</label>
+                <select @bind="baseBranch">
+                    @foreach (var b in branches)
+                    {
+                        <option value="@b">@b</option>
+                    }
+                </select>
+            </div>
+
+            <button class="swap-btn" title="Swap branches" @onclick="Swap">⇆</button>
+
+            <div class="branch-col">
+                <label>Compare</label>
+                <select @bind="compareBranch">
+                    @foreach (var b in branches)
+                    {
+                        <option value="@b">@b</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(compareError))
+        {
+            <div class="error-banner">@compareError</div>
+        }
+
+        <button class="btn btn-primary btn-compare"
+                disabled="@(!CanCompare || comparing)"
+                @onclick="Compare">
+            @(comparing ? "Computing diff…" : "Compare Branches →")
+        </button>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "path")]
+    public string? RepoPath { get; set; }
+
+    private string repoName = "";
+    private List<string> branches = [];
+    private string? baseBranch;
+    private string? compareBranch;
+    private bool loading = true;
+    private bool comparing;
+    private string loadError = "";
+    private string compareError = "";
+
+    private bool CanCompare =>
+        !string.IsNullOrEmpty(baseBranch) &&
+        !string.IsNullOrEmpty(compareBranch) &&
+        baseBranch != compareBranch;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrEmpty(RepoPath)) { loading = false; return; }
+        repoName = Path.GetFileName(RepoPath.TrimEnd('/', '\\'));
+        loading = true;
+        loadError = "";
+        try
+        {
+            branches = await GitService.GetBranchesAsync(RepoPath);
+            baseBranch    = branches.FirstOrDefault(b => b is "main" or "master") ?? branches.FirstOrDefault();
+            compareBranch = branches.Count > 1 ? branches[1] : branches.FirstOrDefault();
+        }
+        catch (Exception ex) { loadError = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private void Swap() => (baseBranch, compareBranch) = (compareBranch, baseBranch);
+
+    private async Task Compare()
+    {
+        if (!CanCompare || comparing || RepoPath is null) return;
+        comparing = true;
+        compareError = "";
+        try
+        {
+            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseBranch!, compareBranch!);
+            Nav.NavigateTo("/diff");
+        }
+        catch (Exception ex) { compareError = ex.Message; }
+        finally { comparing = false; }
+    }
+}

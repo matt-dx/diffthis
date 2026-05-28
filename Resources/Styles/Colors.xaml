@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- Brand -->
+    <Color x:Key="Primary">#1F6FEB</Color>
+    <Color x:Key="PrimaryDark">#58A6FF</Color>
+    <Color x:Key="Secondary">#6E7681</Color>
+
+    <!-- Surface -->
+    <Color x:Key="Surface">#FFFFFF</Color>
+    <Color x:Key="SurfaceDark">#0D1117</Color>
+    <Color x:Key="SurfaceVariant">#F6F8FA</Color>
+    <Color x:Key="SurfaceVariantDark">#161B22</Color>
+
+    <!-- Border -->
+    <Color x:Key="Border">#E1E4E8</Color>
+    <Color x:Key="BorderDark">#30363D</Color>
+
+    <!-- Text -->
+    <Color x:Key="TextPrimary">#24292E</Color>
+    <Color x:Key="TextPrimaryDark">#C9D1D9</Color>
+    <Color x:Key="TextSecondary">#586069</Color>
+    <Color x:Key="TextSecondaryDark">#8B949E</Color>
+
+    <!-- Diff colours -->
+    <Color x:Key="AddGreen">#22863A</Color>
+    <Color x:Key="AddGreenDark">#56D364</Color>
+    <Color x:Key="DelRed">#B31D28</Color>
+    <Color x:Key="DelRedDark">#FF7B72</Color>
+
+</ResourceDictionary>

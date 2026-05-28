@@ -1,0 +1,105 @@
+@page "/"
+@inject IGitService GitService
+@inject ISettingsService Settings
+@inject NavigationManager Nav
+
+<div class="page">
+    <header class="page-header">
+        <div>
+            <h1 class="app-title">DiffThis</h1>
+            <p class="app-subtitle">Compare git branches at a glance</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-primary" @onclick="OpenRepository">Open Repository</button>
+            <a class="btn" href="/settings">Settings</a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="error-banner">@error</div>
+    }
+
+    @if (repos.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-icon">⊘</div>
+            <p class="empty-title">No recent repositories</p>
+            <p class="empty-sub">Click 'Open Repository' to get started</p>
+        </div>
+    }
+    else
+    {
+        <p class="section-title">Recent Repositories</p>
+        <div class="repo-list">
+            @foreach (var repo in repos)
+            {
+                <div class="repo-item" @onclick="() => OpenRepoPath(repo.Path)">
+                    <div class="repo-info">
+                        <span class="repo-name">@repo.Name</span>
+                        <span class="repo-path">@repo.Path</span>
+                        <span class="repo-date">@repo.LastOpened.ToString("g")</span>
+                    </div>
+                    <button class="repo-remove" title="Remove from history"
+                            @onclick:stopPropagation
+                            @onclick="() => RemoveRepo(repo.Path)">✕</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<Repository> repos = [];
+    private string error = "";
+    private bool cliHandled;
+
+    protected override void OnInitialized() => LoadRepos();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || cliHandled) return;
+        cliHandled = true;
+        var args = Environment.GetCommandLineArgs();
+        if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+        {
+            var path = Path.GetFullPath(args[1]);
+            if (Directory.Exists(path))
+                await OpenRepoPath(path);
+        }
+    }
+
+    private void LoadRepos()
+    {
+        repos = Settings.RecentRepositoryPaths
+            .Take(Settings.MaxRecentRepositories)
+            .Select(p => new Repository { Path = p, LastOpened = File.GetLastAccessTime(p) })
+            .ToList();
+    }
+
+    private async Task OpenRepository()
+    {
+        error = "";
+        var result = await MainThread.InvokeOnMainThreadAsync(() => FolderPicker.Default.PickAsync());
+        if (!result.IsSuccessful) return;
+        await OpenRepoPath(result.Folder.Path);
+    }
+
+    private async Task OpenRepoPath(string path)
+    {
+        error = "";
+        if (!GitService.IsGitRepository(path))
+        {
+            error = $"'{path}' is not a git repository.";
+            return;
+        }
+        Settings.AddRecentRepository(path);
+        Nav.NavigateTo($"/branches?path={Uri.EscapeDataString(path)}");
+    }
+
+    private void RemoveRepo(string path)
+    {
+        Settings.RemoveRecentRepository(path);
+        LoadRepos();
+    }
+}
