@@ -36,7 +36,7 @@ public class GitService : IGitService
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
         var statResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--numstat", $"{baseBranch}...{compareBranch}"])
+            .WithArguments(["diff", "--numstat", $"{baseBranch}..{compareBranch}"])
             .WithWorkingDirectory(repositoryPath)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
@@ -47,13 +47,13 @@ public class GitService : IGitService
                 : $"git diff --numstat exited with code {statResult.ExitCode}");
 
         var nameStatusResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--name-status", $"{baseBranch}...{compareBranch}"])
+            .WithArguments(["diff", "--name-status", $"{baseBranch}..{compareBranch}"])
             .WithWorkingDirectory(repositoryPath)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
 
         var diffResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--unified=3", $"{baseBranch}...{compareBranch}"])
+            .WithArguments(["diff", "--unified=3", $"{baseBranch}..{compareBranch}"])
             .WithWorkingDirectory(repositoryPath)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);

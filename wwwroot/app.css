@@ -281,7 +281,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 
 /* ── Diff table ──────────────────────────────────────────────────────── */
 .diff-table           { width: 100%; border-collapse: collapse; }
-.diff-table td        { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 12px; padding: 1px 6px; white-space: pre-wrap; word-break: break-all; }
+.diff-table td        { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 12px; padding: 1px 6px; }
 
 .add-line             { background: var(--add-bg); }
 .add-line .code       { color: var(--add-fg); }
@@ -291,9 +291,9 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .del-line .code       { color: var(--del-fg); }
 .del-line .ln         { background: var(--del-ln); }
 
-.ln   { color: var(--ln-fg); text-align: right; width: 48px; user-select: none; border-right: 1px solid var(--border); }
-.sign { width: 16px; text-align: center; user-select: none; color: var(--ln-fg); }
-.code { width: 100%; }
+.ln   { color: var(--ln-fg); text-align: right; width: 1%; white-space: nowrap; user-select: none; border-right: 1px solid var(--border); }
+.sign { width: 16px; text-align: center; user-select: none; color: var(--ln-fg); white-space: nowrap; }
+.code { width: 100%; white-space: pre-wrap; word-break: break-all; }
 
 /* ── Diff colour labels ──────────────────────────────────────────────── */
 .add { color: #2ea043; font-weight: 600; }

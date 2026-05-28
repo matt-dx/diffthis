@@ -16,19 +16,22 @@ public class ExportService : IExportService
         sb.AppendLine();
         sb.AppendLine($"## Summary");
         sb.AppendLine();
-        sb.AppendLine($"{diff.Files.Count} files changed, **+{diff.TotalAdditions}** / **-{diff.TotalDeletions}**");
+        sb.AppendLine($"{diff.Files.Count} files changed &nbsp; **+{diff.TotalAdditions}** additions &nbsp; **-{diff.TotalDeletions}** deletions");
         sb.AppendLine();
+        sb.AppendLine("| File | Status | Additions | Deletions |");
+        sb.AppendLine("| --- | --- | ---: | ---: |");
 
         foreach (var file in diff.Files)
         {
             var badge = file.Status switch
             {
-                DiffFileStatus.Added => "ADDED",
-                DiffFileStatus.Deleted => "DELETED",
-                DiffFileStatus.Renamed => "RENAMED",
-                _ => "MODIFIED"
+                DiffFileStatus.Added    => "Added",
+                DiffFileStatus.Deleted  => "Deleted",
+                DiffFileStatus.Renamed  => "Renamed",
+                DiffFileStatus.Copied   => "Copied",
+                _                       => "Modified"
             };
-            sb.AppendLine($"| `{file.DisplayPath}` | {badge} | +{file.Additions} -{file.Deletions} |");
+            sb.AppendLine($"| `{file.DisplayPath}` | {badge} | +{file.Additions} | -{file.Deletions} |");
         }
         sb.AppendLine();
 
@@ -237,7 +240,7 @@ public class ExportService : IExportService
         .hunk-header { background: var(--hunk-bg); color: var(--hunk-fg); padding: 4px 12px; font-family: monospace; font-size: 12px; border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); }
         .hunk-ctx { font-style: italic; margin-left: 8px; }
         .diff-table { width: 100%; border-collapse: collapse; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 12px; }
-        .diff-table td { padding: 1px 6px; white-space: pre; }
+        .diff-table td { padding: 1px 6px; }
         .add-line { background: var(--add-bg); }
         .add-line .code { color: var(--add-fg); }
         .add-line .ln { background: var(--add-ln); }
@@ -245,9 +248,10 @@ public class ExportService : IExportService
         .del-line .code { color: var(--del-fg); }
         .del-line .ln { background: var(--del-ln); }
         .ctx-line .code { color: var(--ctx-fg); }
-        .ln { color: var(--ln-fg); text-align: right; width: 48px; user-select: none; padding-right: 12px; border-right: 1px solid var(--border); }
+        .ln { color: var(--ln-fg); text-align: right; width: 1%; white-space: nowrap; user-select: none; padding-right: 12px; border-right: 1px solid var(--border); }
         .sign { color: var(--ln-fg); width: 16px; text-align: center; user-select: none; }
-        .code { width: 100%; overflow-wrap: break-word; white-space: pre-wrap; }
+        .code { width: 100%; white-space: pre-wrap; overflow-wrap: break-word; }
+        .sign { white-space: nowrap; }
         .binary, .no-changes { padding: 16px; color: var(--hunk-fg); font-style: italic; text-align: center; }
         .footer { text-align: center; padding: 24px; color: var(--footer-fg); font-size: 12px; }
         """;

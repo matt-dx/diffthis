@@ -28,6 +28,8 @@ else
                 <span class="del">-@diff.TotalDeletions</span>
             </div>
             <div class="toolbar-actions">
+                <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(diff.RepositoryPath)">← Branches</a>
+                <a class="btn btn-sm" href="/">← Repositories</a>
                 <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
                 <button class="btn btn-sm" @onclick="ExportHtml">Export HTML</button>
                 <a class="btn btn-sm" href="/settings">Settings</a>
@@ -131,9 +133,10 @@ else
     private DiffResult? diff;
     private int selectedIndex = -1;
 
-    protected override void OnInitialized()
+    protected override void OnParametersSet()
     {
         diff = Session.CurrentDiff;
+        selectedIndex = -1;
         if (diff is null) Nav.NavigateTo("/");
     }
 
