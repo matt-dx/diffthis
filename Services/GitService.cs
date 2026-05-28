@@ -11,6 +11,36 @@ public class GitService : IGitService
         Directory.Exists(path) &&
         (Directory.Exists(Path.Combine(path, ".git")) || File.Exists(Path.Combine(path, ".git")));
 
+    public async Task<List<CommitInfo>> GetCommitsAsync(string repositoryPath, string branch, int maxCount = 50, CancellationToken ct = default)
+    {
+        const char sep = '\x1f';
+        var result = await Cli.Wrap("git")
+            .WithArguments(["log", branch, $"--format=%H{sep}%h{sep}%s{sep}%an{sep}%ar", $"--max-count={maxCount}"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+
+        if (result.ExitCode != 0) return [];
+
+        return result.StandardOutput
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line =>
+            {
+                var parts = line.Split(sep);
+                if (parts.Length < 5) return null;
+                return new CommitInfo
+                {
+                    Hash         = parts[0].Trim(),
+                    ShortHash    = parts[1].Trim(),
+                    Subject      = parts[2].Trim(),
+                    Author       = parts[3].Trim(),
+                    RelativeDate = parts[4].Trim()
+                };
+            })
+            .OfType<CommitInfo>()
+            .ToList();
+    }
+
     public async Task<List<string>> GetBranchesAsync(string repositoryPath, CancellationToken ct = default)
     {
         var result = await Cli.Wrap("git")

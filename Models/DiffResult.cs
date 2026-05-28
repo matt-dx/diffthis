@@ -6,6 +6,13 @@ public class DiffResult
     public string RepositoryName { get; set; } = string.Empty;
     public string BaseBranch { get; set; } = string.Empty;
     public string CompareBranch { get; set; } = string.Empty;
+
+    /// Human-readable labels shown in the UI — includes branch name + short hash when a specific commit is pinned.
+    public string BaseLabel    { get; set; } = string.Empty;
+    public string CompareLabel { get; set; } = string.Empty;
+
+    public string BaseDisplay    => BaseLabel.Length    > 0 ? BaseLabel    : BaseBranch;
+    public string CompareDisplay => CompareLabel.Length > 0 ? CompareLabel : CompareBranch;
     public List<DiffFile> Files { get; set; } = [];
 
     public int TotalAdditions => Files.Sum(f => f.Additions);

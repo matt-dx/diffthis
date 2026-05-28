@@ -167,7 +167,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 
 .branch-picker {
   display: grid; grid-template-columns: 1fr auto 1fr;
-  align-items: end; gap: 12px; margin: 8px 0 24px;
+  align-items: start; gap: 12px; margin: 8px 0 24px;
 }
 .branch-col        { display: flex; flex-direction: column; gap: 6px; }
 .branch-col label  {
@@ -184,9 +184,28 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   border: 1px solid var(--border); background: var(--bg);
   color: var(--fg); cursor: pointer; font-size: 18px;
   display: flex; align-items: center; justify-content: center;
+  align-self: start; margin-top: 24px;
 }
 .swap-btn:hover     { background: var(--bg-secondary); }
 .btn-compare        { margin: 0 auto; display: flex; }
+
+.commit-pin-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--fg-secondary); margin-top: 8px; cursor: pointer;
+  user-select: none;
+}
+.commit-pin-label input[type="checkbox"] { cursor: pointer; accent-color: var(--primary); }
+.commit-select,
+.commit-select option {
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace !important;
+  font-size: 11px;
+}
+.commit-select {
+  margin-top: 6px; padding: 6px 8px; width: 100%;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg);
+}
+.commit-loading { font-size: 12px; color: var(--fg-muted); margin-top: 8px; }
 
 /* ── Diff page layout ────────────────────────────────────────────────── */
 .diff-page {
@@ -225,12 +244,24 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   padding: 8px 12px; cursor: pointer; font-size: 12px;
   border-left: 2px solid transparent;
 }
-.file-item:hover       { background: var(--bg); }
-.file-item.active      { background: var(--bg); border-left-color: var(--primary); }
+.file-item:hover                    { background: var(--bg); }
+.file-item.active                   { background: var(--bg); border-left-color: var(--primary); }
+.file-item.file-hidden              { opacity: 0.45; }
+.file-item.file-hidden .eye-btn     { opacity: 1; }
 .file-info             { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .file-name             { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-dir              { font-size: 10px; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-stats            { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; font-size: 11px; font-weight: 600; }
+
+.eye-btn {
+  flex-shrink: 0; width: 22px; height: 22px; padding: 3px;
+  border: none; background: transparent; cursor: pointer;
+  color: var(--fg-muted); display: flex; align-items: center; justify-content: center;
+  border-radius: 3px; opacity: 0; transition: opacity 0.1s, background 0.1s;
+}
+.file-item:hover .eye-btn { opacity: 0.6; }
+.file-item:hover .eye-btn:hover { opacity: 1; background: var(--border); }
+.eye-btn svg { width: 13px; height: 13px; }
 
 /* ── Status badges ───────────────────────────────────────────────────── */
 .status-badge {
@@ -245,10 +276,8 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .badge-copied   { background: #6f42c1; }
 
 /* ── Diff file blocks ────────────────────────────────────────────────── */
-.diff-file {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  margin: 16px; overflow: hidden;
-}
+.diff-file             { border: 1px solid var(--border); border-radius: var(--radius); margin: 16px; overflow: hidden; }
+.diff-file-hidden      { display: none; }
 .file-header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: var(--bg-secondary);

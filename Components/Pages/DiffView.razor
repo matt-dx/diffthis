@@ -18,9 +18,9 @@ else
             <div class="toolbar-title">
                 <span class="tname">@diff.RepositoryName</span>
                 <span class="sep">:</span>
-                <code>@diff.BaseBranch</code>
+                <code>@diff.BaseDisplay</code>
                 <span class="arrow">→</span>
-                <code>@diff.CompareBranch</code>
+                <code>@diff.CompareDisplay</code>
             </div>
             <div class="toolbar-summary">
                 <span>@diff.Files.Count files</span>
@@ -42,7 +42,8 @@ else
                 <div class="sidebar-heading">Changed Files</div>
                 @foreach (var (file, i) in diff.Files.Select((f, i) => (f, i)))
                 {
-                    <div class="file-item @(selectedIndex == i ? "active" : "")"
+                    var hidden = hiddenFiles.Contains(i);
+                    <div class="file-item @(selectedIndex == i ? "active" : "") @(hidden ? "file-hidden" : "")"
                          @onclick="() => ScrollToFile(i)">
                         <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
                         <div class="file-info">
@@ -56,6 +57,28 @@ else
                             <span class="add">+@file.Additions</span>
                             <span class="del">-@file.Deletions</span>
                         </div>
+                        <button class="eye-btn" title="@(hidden ? "Show file" : "Hide file")"
+                                @onclick:stopPropagation
+                                @onclick="() => ToggleFile(i)">
+                            @if (hidden)
+                            {
+                                <!-- eye-off -->
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                                    <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+                                    <line x1="1" y1="1" x2="23" y2="23"/>
+                                </svg>
+                            }
+                            else
+                            {
+                                <!-- eye -->
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                            }
+                        </button>
                     </div>
                 }
             </aside>
@@ -67,14 +90,14 @@ else
                     <div class="diff-empty">
                         <p class="diff-empty-title">No differences found</p>
                         <p class="diff-empty-sub">
-                            <code>@diff.BaseBranch</code> and <code>@diff.CompareBranch</code> are identical at their merge base.
+                            <code>@diff.BaseDisplay</code> and <code>@diff.CompareDisplay</code> are identical.
                         </p>
                         <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(diff.RepositoryPath)">← Change branches</a>
                     </div>
                 }
                 @foreach (var (file, i) in diff.Files.Select((f, i) => (f, i)))
                 {
-                    <div class="diff-file" id="file-@i">
+                    <div class="diff-file @(hiddenFiles.Contains(i) ? "diff-file-hidden" : "")" id="file-@i">
                         <div class="file-header">
                             <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
                             <span class="file-path">
@@ -131,18 +154,27 @@ else
 @code {
     private DiffResult? diff;
     private int selectedIndex = -1;
+    private HashSet<int> hiddenFiles = [];
 
     protected override void OnParametersSet()
     {
         diff = Session.CurrentDiff;
         selectedIndex = -1;
+        hiddenFiles.Clear();
         if (diff is null) Nav.NavigateTo("/");
     }
 
     private async Task ScrollToFile(int index)
     {
+        hiddenFiles.Remove(index); // clicking a hidden file un-hides it
         selectedIndex = index;
         await JS.InvokeVoidAsync("scrollToElement", $"file-{index}");
+    }
+
+    private void ToggleFile(int index)
+    {
+        if (!hiddenFiles.Remove(index))
+            hiddenFiles.Add(index);
     }
 
     private async Task ExportMarkdown()
@@ -155,7 +187,7 @@ else
 
     private string ExportPath(string ext)
     {
-        var name = $"diff_{diff!.BaseBranch}_{diff.CompareBranch}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
+        var name = $"diff_{diff!.BaseDisplay}_{diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
             .Replace('/', '-').Replace('\\', '-');
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), name);
     }

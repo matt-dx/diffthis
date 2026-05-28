@@ -8,7 +8,7 @@ public class ExportService : IExportService
     public string GenerateMarkdown(DiffResult diff)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"# Diff: `{diff.BaseBranch}` → `{diff.CompareBranch}`");
+        sb.AppendLine($"# Diff: `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
         sb.AppendLine();
         sb.AppendLine($"**Repository:** {diff.RepositoryName}");
         sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm}");

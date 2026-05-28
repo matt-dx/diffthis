@@ -23,27 +23,71 @@
     else
     {
         <div class="branch-picker">
+
+            <!-- Base -->
             <div class="branch-col">
                 <label>Base</label>
-                <select @bind="baseBranch">
+                <select @bind="baseBranch" @bind:after="OnBaseBranchChanged">
                     @foreach (var b in branches)
                     {
                         <option value="@b">@b</option>
                     }
                 </select>
+                <label class="commit-pin-label">
+                    <input type="checkbox" @bind="pinBase" @bind:after="OnPinBaseChanged" />
+                    Specific commit
+                </label>
+                @if (pinBase)
+                {
+                    @if (baseCommitsLoading)
+                    {
+                        <div class="commit-loading">Loading commits…</div>
+                    }
+                    else
+                    {
+                        <select class="commit-select" @bind="baseCommit">
+                            @foreach (var c in baseCommits)
+                            {
+                                <option value="@c.Hash">@c.Display</option>
+                            }
+                        </select>
+                    }
+                }
             </div>
 
             <button class="swap-btn" title="Swap branches" @onclick="Swap">⇆</button>
 
+            <!-- Compare -->
             <div class="branch-col">
                 <label>Compare</label>
-                <select @bind="compareBranch">
+                <select @bind="compareBranch" @bind:after="OnCompareBranchChanged">
                     @foreach (var b in branches)
                     {
                         <option value="@b">@b</option>
                     }
                 </select>
+                <label class="commit-pin-label">
+                    <input type="checkbox" @bind="pinCompare" @bind:after="OnPinCompareChanged" />
+                    Specific commit
+                </label>
+                @if (pinCompare)
+                {
+                    @if (compareCommitsLoading)
+                    {
+                        <div class="commit-loading">Loading commits…</div>
+                    }
+                    else
+                    {
+                        <select class="commit-select" @bind="compareCommit">
+                            @foreach (var c in compareCommits)
+                            {
+                                <option value="@c.Hash">@c.Display</option>
+                            }
+                        </select>
+                    }
+                }
             </div>
+
         </div>
 
         @if (!string.IsNullOrEmpty(compareError))
@@ -54,7 +98,7 @@
         <button class="btn btn-primary btn-compare"
                 disabled="@(!CanCompare || comparing)"
                 @onclick="Compare">
-            @(comparing ? "Computing diff…" : "Compare Branches →")
+            @(comparing ? "Computing diff…" : "Compare →")
         </button>
     }
 </div>
@@ -72,10 +116,22 @@
     private string loadError = "";
     private string compareError = "";
 
+    // Commit pinning
+    private bool pinBase;
+    private bool pinCompare;
+    private string? baseCommit;
+    private string? compareCommit;
+    private List<CommitInfo> baseCommits = [];
+    private List<CommitInfo> compareCommits = [];
+    private bool baseCommitsLoading;
+    private bool compareCommitsLoading;
+
     private bool CanCompare =>
         !string.IsNullOrEmpty(baseBranch) &&
         !string.IsNullOrEmpty(compareBranch) &&
-        baseBranch != compareBranch;
+        baseBranch != compareBranch &&
+        !baseCommitsLoading &&
+        !compareCommitsLoading;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -93,19 +149,90 @@
         finally { loading = false; }
     }
 
-    private void Swap() => (baseBranch, compareBranch) = (compareBranch, baseBranch);
+    private async Task OnBaseBranchChanged()
+    {
+        baseCommit  = null;
+        baseCommits = [];
+        if (pinBase) await LoadBaseCommitsAsync();
+    }
+
+    private async Task OnCompareBranchChanged()
+    {
+        compareCommit  = null;
+        compareCommits = [];
+        if (pinCompare) await LoadCompareCommitsAsync();
+    }
+
+    private async Task OnPinBaseChanged()
+    {
+        if (pinBase && baseCommits.Count == 0)
+            await LoadBaseCommitsAsync();
+    }
+
+    private async Task OnPinCompareChanged()
+    {
+        if (pinCompare && compareCommits.Count == 0)
+            await LoadCompareCommitsAsync();
+    }
+
+    private async Task LoadBaseCommitsAsync()
+    {
+        if (string.IsNullOrEmpty(baseBranch) || string.IsNullOrEmpty(RepoPath)) return;
+        baseCommitsLoading = true;
+        StateHasChanged();
+        try
+        {
+            baseCommits = await GitService.GetCommitsAsync(RepoPath, baseBranch);
+            baseCommit  = baseCommits.FirstOrDefault()?.Hash;
+        }
+        finally { baseCommitsLoading = false; }
+    }
+
+    private async Task LoadCompareCommitsAsync()
+    {
+        if (string.IsNullOrEmpty(compareBranch) || string.IsNullOrEmpty(RepoPath)) return;
+        compareCommitsLoading = true;
+        StateHasChanged();
+        try
+        {
+            compareCommits = await GitService.GetCommitsAsync(RepoPath, compareBranch);
+            compareCommit  = compareCommits.FirstOrDefault()?.Hash;
+        }
+        finally { compareCommitsLoading = false; }
+    }
+
+    private void Swap()
+    {
+        (baseBranch,   compareBranch)   = (compareBranch,   baseBranch);
+        (pinBase,      pinCompare)      = (pinCompare,      pinBase);
+        (baseCommit,   compareCommit)   = (compareCommit,   baseCommit);
+        (baseCommits,  compareCommits)  = (compareCommits,  baseCommits);
+    }
 
     private async Task Compare()
     {
         if (!CanCompare || comparing || RepoPath is null) return;
-        comparing = true;
+        comparing    = true;
         compareError = "";
         try
         {
-            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseBranch!, compareBranch!);
+            var baseRef    = pinBase    && !string.IsNullOrEmpty(baseCommit)    ? baseCommit!    : baseBranch!;
+            var compareRef = pinCompare && !string.IsNullOrEmpty(compareCommit) ? compareCommit! : compareBranch!;
+
+            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, compareRef);
+
+            // Build display labels — show "branch @ shortHash" when a specific commit is pinned
+            Session.CurrentDiff.BaseLabel = pinBase && !string.IsNullOrEmpty(baseCommit)
+                ? $"{baseBranch} @ {(baseCommits.FirstOrDefault(c => c.Hash == baseCommit)?.ShortHash ?? baseCommit![..7])}"
+                : baseBranch!;
+            Session.CurrentDiff.CompareLabel = pinCompare && !string.IsNullOrEmpty(compareCommit)
+                ? $"{compareBranch} @ {(compareCommits.FirstOrDefault(c => c.Hash == compareCommit)?.ShortHash ?? compareCommit![..7])}"
+                : compareBranch!;
+
             Nav.NavigateTo("/diff");
+            return; // leave comparing=true so button stays "Computing diff…" until unmounted
         }
         catch (Exception ex) { compareError = ex.Message; }
-        finally { comparing = false; }
+        comparing = false;
     }
 }
