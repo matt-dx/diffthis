@@ -18,6 +18,18 @@
                         @onclick='() => SetTheme(AppTheme.Dark)'>&#x1F319; Dark</button>
             </div>
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Font ligatures</p>
+                    <p class="setting-desc">Render <code>!=</code>, <code>=></code>, and similar sequences as typographic symbols in diffs</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="fontLigatures" @bind:after="SaveFontLigatures" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
     </section>
 
     <section class="settings-section">
@@ -55,9 +67,13 @@
 
 @code {
     private int maxRecent;
+    private bool fontLigatures;
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         maxRecent = Svc.MaxRecentRepositories;
+        fontLigatures = Svc.FontLigatures;
+    }
 
     private void SetTheme(AppTheme theme)
     {
@@ -67,6 +83,9 @@
 
     private void SaveMaxRecent() =>
         Svc.MaxRecentRepositories = maxRecent;
+
+    private void SaveFontLigatures() =>
+        Svc.FontLigatures = fontLigatures;
 
     private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";
 }

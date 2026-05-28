@@ -281,7 +281,8 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 
 /* ── Diff table ──────────────────────────────────────────────────────── */
 .diff-table           { width: 100%; border-collapse: collapse; }
-.diff-table td        { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 12px; padding: 1px 6px; }
+.diff-table td        { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; font-size: 12px; padding: 1px 6px; font-variant-ligatures: none; }
+.ligatures .diff-table td { font-variant-ligatures: normal; }
 
 .add-line             { background: var(--add-bg); }
 .add-line .code       { color: var(--add-fg); }
@@ -291,8 +292,8 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .del-line .code       { color: var(--del-fg); }
 .del-line .ln         { background: var(--del-ln); }
 
-.ln   { color: var(--ln-fg); text-align: right; width: 1%; white-space: nowrap; user-select: none; border-right: 1px solid var(--border); }
-.sign { width: 16px; text-align: center; user-select: none; color: var(--ln-fg); white-space: nowrap; }
+.ln   { color: var(--ln-fg); text-align: right; width: 1%; white-space: nowrap; user-select: none; border-right: 1px solid var(--border); vertical-align: top; }
+.sign { width: 16px; text-align: center; user-select: none; color: var(--ln-fg); white-space: nowrap; vertical-align: top; }
 .code { width: 100%; white-space: pre-wrap; word-break: break-all; }
 
 /* ── Diff colour labels ──────────────────────────────────────────────── */
@@ -328,6 +329,20 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--bg); color: var(--fg); font-size: 13px; font-family: inherit;
 }
+.toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  width: 40px; height: 22px; background: var(--border); border-radius: 11px;
+  transition: background 0.15s;
+}
+.toggle input:checked + .toggle-track { background: var(--primary); }
+.toggle-track::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  transition: transform 0.15s;
+}
+.toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+
 .version-badge {
   font-family: monospace; font-size: 13px; color: var(--fg-secondary);
   background: var(--bg-secondary); padding: 4px 8px; border-radius: 4px;

@@ -11,7 +11,7 @@
 }
 else
 {
-    <div class="diff-page">
+    <div class="diff-page @(Settings.FontLigatures ? "ligatures" : "")">
 
         <!-- Toolbar -->
         <div class="diff-toolbar">
@@ -31,7 +31,6 @@ else
                 <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(diff.RepositoryPath)">← Branches</a>
                 <a class="btn btn-sm" href="/">← Repositories</a>
                 <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
-                <button class="btn btn-sm" @onclick="ExportHtml">Export HTML</button>
                 <a class="btn btn-sm" href="/settings">Settings</a>
             </div>
         </div>
@@ -152,15 +151,6 @@ else
         var path = ExportPath("md");
         await Export.ExportMarkdownAsync(diff, path);
         await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}");
-    }
-
-    private async Task ExportHtml()
-    {
-        if (diff is null) return;
-        var dark = Settings.Theme == AppTheme.Dark;
-        var path = ExportPath("html");
-        await Export.ExportHtmlAsync(diff, path, dark);
-        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}\n\nOpen in a browser → print to PDF.");
     }
 
     private string ExportPath(string ext)

@@ -8,6 +8,7 @@ public class SettingsService : ISettingsService
     private const string ThemeKey = "theme";
     private const string MaxRecentKey = "max_recent";
     private const string RecentReposKey = "recent_repos";
+    private const string FontLigaturesKey = "font_ligatures";
 
     public event Action? ThemeChanged;
 
@@ -27,6 +28,12 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(MaxRecentKey, 10);
         set => Preferences.Set(MaxRecentKey, value);
+    }
+
+    public bool FontLigatures
+    {
+        get => Preferences.Get(FontLigaturesKey, false);
+        set => Preferences.Set(FontLigaturesKey, value);
     }
 
     public List<string> RecentRepositoryPaths
