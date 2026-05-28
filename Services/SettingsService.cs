@@ -5,10 +5,11 @@ namespace DiffThis.Services;
 
 public class SettingsService : ISettingsService
 {
-    private const string ThemeKey = "theme";
-    private const string MaxRecentKey = "max_recent";
-    private const string RecentReposKey = "recent_repos";
+    private const string ThemeKey        = "theme";
+    private const string MaxRecentKey    = "max_recent";
+    private const string RecentReposKey  = "recent_repos";
     private const string FontLigaturesKey = "font_ligatures";
+    private const string BranchStatesKey = "branch_states";
 
     public event Action? ThemeChanged;
 
@@ -61,5 +62,21 @@ public class SettingsService : ISettingsService
         var repos = RecentRepositoryPaths;
         repos.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
         RecentRepositoryPaths = repos;
+    }
+
+    public BranchSelectionState? GetBranchState(string repoPath)
+    {
+        var json = Preferences.Get(BranchStatesKey, "{}");
+        var dict = JsonSerializer.Deserialize<Dictionary<string, BranchSelectionState>>(json);
+        return dict is not null && dict.TryGetValue(repoPath, out var state) ? state : null;
+    }
+
+    public void SaveBranchState(string repoPath, BranchSelectionState state)
+    {
+        var json = Preferences.Get(BranchStatesKey, "{}");
+        var dict = JsonSerializer.Deserialize<Dictionary<string, BranchSelectionState>>(json)
+                   ?? new Dictionary<string, BranchSelectionState>();
+        dict[repoPath] = state;
+        Preferences.Set(BranchStatesKey, JsonSerializer.Serialize(dict));
     }
 }

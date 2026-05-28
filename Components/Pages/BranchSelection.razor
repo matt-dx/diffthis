@@ -1,5 +1,6 @@
 @page "/branches"
 @inject IGitService GitService
+@inject ISettingsService Settings
 @inject DiffSessionService Session
 @inject NavigationManager Nav
 
@@ -142,8 +143,37 @@
         try
         {
             branches = await GitService.GetBranchesAsync(RepoPath);
-            baseBranch    = branches.FirstOrDefault(b => b is "main" or "master") ?? branches.FirstOrDefault();
-            compareBranch = branches.Count > 1 ? branches[1] : branches.FirstOrDefault();
+
+            var saved = Settings.GetBranchState(RepoPath);
+            if (saved is not null
+                && branches.Contains(saved.BaseBranch)
+                && branches.Contains(saved.CompareBranch))
+            {
+                baseBranch    = saved.BaseBranch;
+                compareBranch = saved.CompareBranch;
+                pinBase       = saved.PinBase;
+                pinCompare    = saved.PinCompare;
+
+                if (pinBase)
+                {
+                    await LoadBaseCommitsAsync();
+                    if (!string.IsNullOrEmpty(saved.BaseCommit)
+                        && baseCommits.Any(c => c.Hash == saved.BaseCommit))
+                        baseCommit = saved.BaseCommit;
+                }
+                if (pinCompare)
+                {
+                    await LoadCompareCommitsAsync();
+                    if (!string.IsNullOrEmpty(saved.CompareCommit)
+                        && compareCommits.Any(c => c.Hash == saved.CompareCommit))
+                        compareCommit = saved.CompareCommit;
+                }
+            }
+            else
+            {
+                baseBranch    = branches.FirstOrDefault(b => b is "main" or "master") ?? branches.FirstOrDefault();
+                compareBranch = branches.Count > 1 ? branches[1] : branches.FirstOrDefault();
+            }
         }
         catch (Exception ex) { loadError = ex.Message; }
         finally { loading = false; }
@@ -228,6 +258,16 @@
             Session.CurrentDiff.CompareLabel = pinCompare && !string.IsNullOrEmpty(compareCommit)
                 ? $"{compareBranch} @ {(compareCommits.FirstOrDefault(c => c.Hash == compareCommit)?.ShortHash ?? compareCommit![..7])}"
                 : compareBranch!;
+
+            Settings.SaveBranchState(RepoPath, new BranchSelectionState
+            {
+                BaseBranch    = baseBranch!,
+                CompareBranch = compareBranch!,
+                PinBase       = pinBase,
+                PinCompare    = pinCompare,
+                BaseCommit    = baseCommit    ?? string.Empty,
+                CompareCommit = compareCommit ?? string.Empty
+            });
 
             Nav.NavigateTo("/diff");
             return; // leave comparing=true so button stays "Computing diff…" until unmounted
