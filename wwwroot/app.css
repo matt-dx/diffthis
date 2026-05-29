@@ -16,6 +16,17 @@
   --del-bg:  #ffeef0; --del-fg:  #b31d28; --del-ln:  #ffdce0;
   --hunk-bg: #f1f8ff; --hunk-fg: #586069;
   --ln-fg:   #babbbd;
+
+  /* Syntax highlighting (VS Light-inspired) */
+  --hl-keyword: #0000ff;
+  --hl-comment: #008000;
+  --hl-string:  #a31515;
+  --hl-number:  #09885a;
+  --hl-type:    #267f99;
+  --hl-preproc: #af00db;
+  --hl-tag:     #800000;
+  --hl-attr:    #e00000;
+  --hl-special: #795e26;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +46,16 @@
     --del-bg:  #2b0b0b; --del-fg:  #ff7b72; --del-ln:  #3a0c0c;
     --hunk-bg: #1c2a3a; --hunk-fg: #8b949e;
     --ln-fg:   #484f58;
+
+    --hl-keyword: #569cd6;
+    --hl-comment: #6a9955;
+    --hl-string:  #ce9178;
+    --hl-number:  #b5cea8;
+    --hl-type:    #4ec9b0;
+    --hl-preproc: #c586c0;
+    --hl-tag:     #569cd6;
+    --hl-attr:    #9cdcfe;
+    --hl-special: #dcdcaa;
   }
 }
 
@@ -55,6 +76,17 @@
   --del-bg:  #2b0b0b; --del-fg:  #ff7b72; --del-ln:  #3a0c0c;
   --hunk-bg: #1c2a3a; --hunk-fg: #8b949e;
   --ln-fg:   #484f58;
+
+  /* Syntax highlighting (VS Dark-inspired) */
+  --hl-keyword: #569cd6;
+  --hl-comment: #6a9955;
+  --hl-string:  #ce9178;
+  --hl-number:  #b5cea8;
+  --hl-type:    #4ec9b0;
+  --hl-preproc: #c586c0;
+  --hl-tag:     #569cd6;
+  --hl-attr:    #9cdcfe;
+  --hl-special: #dcdcaa;
 }
 
 /* ── Reset ───────────────────────────────────────────────────────────── */
@@ -335,6 +367,40 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   :root:not([data-theme="light"]) .del { color: #ff7b72; }
 }
 
+
+/* ── Syntax highlighting (ColorCode CSS classes) ─────────────────────── */
+/* ColorCode.HTML's HtmlClassFormatter emits <span class="scopeName"> tags. */
+/* We scope all rules under .code so they have specificity 0-2-0, matching  */
+/* .add-line .code / .del-line .code — and since these rules appear later   */
+/* in the stylesheet they win, ensuring highlights show on diff lines.       */
+.code .keyword, .code .controlKeyword, .code .pseudoKeyword,
+.code .jsonConst, .code .markdownHeader,
+.code .builtinFunction, .code .builtinValue, .code .sqlSystemFunction,
+.code .powershellCommand                              { color: var(--hl-keyword); }
+
+.code .comment, .code .xmlDocComment, .code .htmlComment,
+.code .xmlComment, .code .powershellOperator          { color: var(--hl-comment); }
+
+.code .string, .code .stringCSharpVerbatim, .code .jsonString,
+.code .xmlAttributeValue, .code .htmlAttributeValue,
+.code .cssPropertyValue                               { color: var(--hl-string); }
+
+.code .number, .code .jsonNumber                      { color: var(--hl-number); }
+
+.code .type, .code .typeVariable, .code .namespace, .code .predefined,
+.code .className, .code .constructor, .code .markdownCode,
+.code .cssSelector, .code .powershellType             { color: var(--hl-type); }
+
+.code .preprocessorKeyword, .code .powershellVariable { color: var(--hl-preproc); }
+
+.code .htmlElementName, .code .xmlName, .code .xmlDocTag { color: var(--hl-tag); }
+
+.code .htmlAttributeName, .code .xmlAttribute, .code .xmlDelimiter,
+.code .htmlTagDelimiter, .code .htmlOperator, .code .cssPropertyName,
+.code .jsonKey, .code .attribute, .code .powershellAttribute,
+.code .powershellParameter                            { color: var(--hl-attr); }
+
+.code .stringEscape, .code .specialChar               { color: var(--hl-special); }
 
 /* ── Settings ────────────────────────────────────────────────────────── */
 .settings-section  { margin-bottom: 28px; }

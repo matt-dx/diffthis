@@ -119,6 +119,8 @@ else
                         }
                         else
                         {
+                            var hlLines = _highlighted.TryGetValue(i, out var hl) ? hl : null;
+                            var lineIdx = 0;
                             foreach (var hunk in file.Hunks)
                             {
                                 <div class="hunk-header">
@@ -132,12 +134,23 @@ else
                                     <tbody>
                                         @foreach (var line in hunk.Lines)
                                         {
+                                            var capturedIdx = lineIdx;
                                             <tr class="@LineCss(line.Type)">
                                                 <td class="ln">@line.OldLineNumber</td>
                                                 <td class="ln">@line.NewLineNumber</td>
                                                 <td class="sign">@LineSign(line.Type)</td>
-                                                <td class="code">@line.Content</td>
+                                                <td class="code">
+                                                    @if (hlLines != null && capturedIdx < hlLines.Count)
+                                                    {
+                                                        @((MarkupString)hlLines[capturedIdx])
+                                                    }
+                                                    else
+                                                    {
+                                                        @line.Content
+                                                    }
+                                                </td>
                                             </tr>
+                                            lineIdx++;
                                         }
                                     </tbody>
                                 </table>
@@ -155,13 +168,34 @@ else
     private DiffResult? diff;
     private int selectedIndex = -1;
     private HashSet<int> hiddenFiles = [];
+    private Dictionary<int, List<string>> _highlighted = [];
 
     protected override void OnParametersSet()
     {
         diff = Session.CurrentDiff;
         selectedIndex = -1;
         hiddenFiles.Clear();
-        if (diff is null) Nav.NavigateTo("/");
+        _highlighted.Clear();
+        if (diff is null) { Nav.NavigateTo("/"); return; }
+        HighlightDiff();
+    }
+
+    private void HighlightDiff()
+    {
+        foreach (var (file, fi) in diff!.Files.Select((f, i) => (f, i)))
+        {
+            if (file.IsBinary || file.Hunks.Count == 0) continue;
+            var lang = SyntaxHighlighter.GetLanguage(file.FileName);
+            if (lang is null) continue;
+
+            var lines = new List<string>();
+            foreach (var hunk in file.Hunks)
+            {
+                var contents = hunk.Lines.Select(l => l.Content).ToArray();
+                lines.AddRange(SyntaxHighlighter.HighlightLines(contents, lang));
+            }
+            _highlighted[fi] = lines;
+        }
     }
 
     private async Task ScrollToFile(int index)

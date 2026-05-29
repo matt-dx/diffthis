@@ -160,12 +160,12 @@ public class GitService : IGitService
 
             if (rawLine.StartsWith("--- a/") || rawLine.StartsWith("--- /dev/null"))
             {
-                currentFile.OldPath = rawLine.StartsWith("--- a/") ? rawLine[6..] : string.Empty;
+                currentFile.OldPath = rawLine.StartsWith("--- a/") ? rawLine[6..].TrimEnd() : string.Empty;
                 continue;
             }
             if (rawLine.StartsWith("+++ b/") || rawLine.StartsWith("+++ /dev/null"))
             {
-                currentFile.NewPath = rawLine.StartsWith("+++ b/") ? rawLine[6..] : string.Empty;
+                currentFile.NewPath = rawLine.StartsWith("+++ b/") ? rawLine[6..].TrimEnd() : string.Empty;
                 var key = currentFile.NewPath.Length > 0 ? currentFile.NewPath : currentFile.OldPath;
                 if (statMap.TryGetValue(key, out var stats))
                 {
@@ -207,11 +207,11 @@ public class GitService : IGitService
             {
                 currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Addition, Content = rawLine[1..], NewLineNumber = newLine++ });
             }
-            else if (rawLine.StartsWith(" ") || rawLine.StartsWith("\\"))
+            else if (rawLine.StartsWith(" "))
             {
-                var content = rawLine.StartsWith(" ") ? rawLine[1..] : rawLine;
-                currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Context, Content = content, OldLineNumber = oldLine++, NewLineNumber = newLine++ });
+                currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Context, Content = rawLine[1..], OldLineNumber = oldLine++, NewLineNumber = newLine++ });
             }
+            // Lines starting with '\' are git markers like "\ No newline at end of file" — skip them
         }
 
         if (currentFile != null) files.Add(currentFile);
