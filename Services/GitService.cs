@@ -90,7 +90,7 @@ public class GitService : IGitService
 
         var statMap = ParseNumstat(statResult.StandardOutput);
         var statusMap = ParseNameStatus(nameStatusResult.StandardOutput);
-        var files = ParseUnifiedDiff(diffResult.StandardOutput, statMap, statusMap);
+        var files = await Task.Run(() => ParseUnifiedDiff(diffResult.StandardOutput, statMap, statusMap));
 
         return new DiffResult
         {

@@ -2,7 +2,7 @@
 @inject ISettingsService Svc
 
 <div class="page narrow">
-    <a class="back-link" href="/">← Repositories</a>
+    <a class="back-link" href="@_returnUrl">← Back</a>
     <h1 class="page-h1">Settings</h1>
 
     <section class="settings-section">
@@ -66,11 +66,17 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "from")]
+    private string? ReturnUrl { get; set; }
+
+    private string _returnUrl = "/";
+
     private int maxRecent;
     private bool fontLigatures;
 
     protected override void OnInitialized()
     {
+        _returnUrl = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
         maxRecent = Svc.MaxRecentRepositories;
         fontLigatures = Svc.FontLigatures;
     }

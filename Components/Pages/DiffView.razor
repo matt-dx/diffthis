@@ -31,7 +31,7 @@ else
                 <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(diff.RepositoryPath)">← Branches</a>
                 <a class="btn btn-sm" href="/">← Repositories</a>
                 <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
-                <a class="btn btn-sm" href="/settings">Settings</a>
+                <a class="btn btn-sm" href="/settings?from=/diff">Settings</a>
             </div>
         </div>
 
@@ -169,6 +169,7 @@ else
     private int selectedIndex = -1;
     private HashSet<int> hiddenFiles = [];
     private Dictionary<int, List<string>> _highlighted = [];
+    private bool _highlighting;
 
     protected override void OnParametersSet()
     {
@@ -176,25 +177,42 @@ else
         selectedIndex = -1;
         hiddenFiles.Clear();
         _highlighted.Clear();
-        if (diff is null) { Nav.NavigateTo("/"); return; }
-        HighlightDiff();
+        _highlighting = diff is not null;
+        if (diff is null) Nav.NavigateTo("/");
     }
 
-    private void HighlightDiff()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        foreach (var (file, fi) in diff!.Files.Select((f, i) => (f, i)))
+        if (!_highlighting) return;
+        _highlighting = false;
+        try
+        {
+            await Task.Run(ComputeHighlighting);
+        }
+        catch { /* silently ignore; _highlighted will have whatever partial results were saved */ }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ComputeHighlighting()
+    {
+        if (diff is null) return;
+        foreach (var (file, fi) in diff.Files.Select((f, i) => (f, i)))
         {
             if (file.IsBinary || file.Hunks.Count == 0) continue;
             var lang = SyntaxHighlighter.GetLanguage(file.FileName);
             if (lang is null) continue;
 
-            var lines = new List<string>();
-            foreach (var hunk in file.Hunks)
+            try
             {
-                var contents = hunk.Lines.Select(l => l.Content).ToArray();
-                lines.AddRange(SyntaxHighlighter.HighlightLines(contents, lang));
+                var lines = new List<string>();
+                foreach (var hunk in file.Hunks)
+                {
+                    var contents = hunk.Lines.Select(l => l.Content).ToArray();
+                    lines.AddRange(SyntaxHighlighter.HighlightLines(contents, lang));
+                }
+                _highlighted[fi] = lines;
             }
-            _highlighted[fi] = lines;
+            catch { /* skip this file; it will render as plain text */ }
         }
     }
 

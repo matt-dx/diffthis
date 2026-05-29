@@ -36,7 +36,7 @@ public static class SyntaxHighlighter
             "ts" or "tsx"                                      => _tsEnhanced.Value,
             "js" or "jsx" or "mjs" or "cjs"                    => _jsEnhanced.Value,
             "json" or "jsonc"                                  => Languages.FindById("json"),
-            "css" or "scss" or "sass" or "less"                => Languages.Css    ?? Languages.FindById("css"),
+            "css" or "scss" or "sass" or "less"                => CssLang.Instance,
             "html" or "htm"                                    => Languages.Html   ?? Languages.FindById("html"),
             "xml" or "xaml" or "csproj" or "props"
                 or "targets" or "razor" or "cshtml"            => Languages.Xml    ?? Languages.FindById("xml"),
@@ -401,6 +401,48 @@ public static class SyntaxHighlighter
                 new Dictionary<int, string> { [0] = ScopeName.PreprocessorKeyword }),
             // Instructions at start of line (case-insensitive via (?i))
             new(@"(?m)(?i)^(FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\b",
+                new Dictionary<int, string> { [0] = ScopeName.Keyword }),
+        ];
+    }
+
+    private sealed class CssLang : ILanguage
+    {
+        public static readonly CssLang Instance = new();
+
+        public string  Id               => "css";
+        public string  Name             => "CSS";
+        public string  CssClassName     => "css";
+        public string? FirstLinePattern => null;
+        public bool    HasAlias(string alias) => false;
+
+        public IList<LanguageRule> Rules =>
+        [
+            // Block comments
+            new(@"/\*[\s\S]*?\*/",
+                new Dictionary<int, string> { [0] = ScopeName.Comment }),
+            // Strings
+            new(@"""(?:[^""\\]|\\.)*""|'(?:[^'\\]|\\.)*'",
+                new Dictionary<int, string> { [0] = ScopeName.String }),
+            // At-rules: @media, @keyframes, @import, etc.
+            new(@"@[a-zA-Z][\w-]*",
+                new Dictionary<int, string> { [0] = ScopeName.PreprocessorKeyword }),
+            // CSS variables: --custom-prop
+            new(@"--[a-zA-Z][\w-]*",
+                new Dictionary<int, string> { [0] = ScopeName.Type }),
+            // var() / env() / calc() and other CSS functions
+            new(@"\b[a-zA-Z][\w-]*(?=\s*\()",
+                new Dictionary<int, string> { [0] = ScopeName.BuiltinFunction }),
+            // Properties: identifier immediately before ':'  (inside a rule block)
+            new(@"(?m)^\s*([\w-]+)(?=\s*:)",
+                new Dictionary<int, string> { [1] = ScopeName.Keyword }),
+            // Selectors: class (.foo), id (#foo), pseudo (:hover, ::before)
+            new(@"[.#][a-zA-Z][\w-]*|::?[a-zA-Z][\w-]*",
+                new Dictionary<int, string> { [0] = ScopeName.Type }),
+            // Units and numbers: 12px, 1.5em, 100%, #fff, #aabbcc
+            new(@"#[0-9a-fA-F]{3,8}\b|\b\d+(?:\.\d+)?(?:px|em|rem|vh|vw|vmin|vmax|%|s|ms|deg|rad|turn|fr|ch|ex|cm|mm|in|pt|pc)?\b",
+                new Dictionary<int, string> { [0] = ScopeName.Number }),
+            // Important
+            new(@"!important",
                 new Dictionary<int, string> { [0] = ScopeName.Keyword }),
         ];
     }
