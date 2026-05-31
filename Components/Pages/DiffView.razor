@@ -2,8 +2,12 @@
 @inject DiffSessionService Session
 @inject IExportService Export
 @inject ISettingsService Settings
+@inject IClaudeAuthService ClaudeAuth
+@inject IClaudeService Claude
+@inject AiCacheService AiCache
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@using Markdig
 
 @if (diff is null)
 {
@@ -34,6 +38,96 @@ else
                 <a class="btn btn-sm" href="/settings?from=/diff">Settings</a>
             </div>
         </div>
+
+        @if (ClaudeAuth.State == ClaudeAuthState.Authenticated)
+        {
+            <!-- AI action bar -->
+            <div class="ai-action-bar">
+                <div class="ai-action-bar-left">
+                    <button class="btn btn-sm @(_aiFeature == "review" && _aiPanelOpen ? "btn-active" : "")"
+                            @onclick='() => ToggleAiPanel("review")'>Code Review</button>
+                    <button class="btn btn-sm @(_aiFeature == "explain" && _aiPanelOpen ? "btn-active" : "")"
+                            @onclick='() => ToggleAiPanel("explain")'>Explain Changes</button>
+                </div>
+                <div class="ai-action-bar-right">
+                    <label class="ai-model-label">Model</label>
+                    <select class="select-sm" @bind="_selectedModel">
+                        @foreach (var m in Claude.AvailableModels)
+                        {
+                            <option value="@m">@ModelLabel(m)</option>
+                        }
+                    </select>
+                    @if (_aiRunning)
+                    {
+                        <span class="ai-spinner">Running…</span>
+                    }
+                    else if (_aiPanelOpen)
+                    {
+                        <button class="btn btn-sm btn-primary" @onclick="RunAi">Run</button>
+                    }
+                </div>
+            </div>
+
+            <!-- AI panel -->
+            @if (_aiPanelOpen)
+            {
+                var allEntries = AiCache.GetAll(diff!.RepositoryPath, diff.BaseBranch, diff.CompareBranch);
+                var featureEntries = allEntries
+                    .Where(kv => kv.Key.feature == _aiFeature)
+                    .OrderBy(kv => kv.Value.CachedAt)
+                    .ToList();
+                var viewing = featureEntries.FirstOrDefault(kv => kv.Key.model == _viewingModel);
+                if (viewing.Value is null && featureEntries.Count > 0)
+                    viewing = featureEntries.Last();
+                <div class="ai-panel">
+                    @if (_aiError is not null)
+                    {
+                        <div class="ai-error">@_aiError</div>
+                    }
+                    @if (_aiRunning)
+                    {
+                        <div class="ai-loading">
+                            Generating response with @ModelLabel(_selectedModel)…
+                        </div>
+                    }
+                    else if (featureEntries.Count == 0)
+                    {
+                        <div class="ai-empty">
+                            Select a model and click <strong>Run</strong> to generate
+                            @(_aiFeature == "review" ? "a code review" : "an explanation").
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Model tabs -->
+                        <div class="ai-model-tabs">
+                            @foreach (var (key, entry) in featureEntries)
+                            {
+                                var capturedModel = key.model;
+                                var isActive      = (viewing.Value is not null && viewing.Key.model == capturedModel);
+                                <div class="ai-model-tab @(isActive ? "active" : "")">
+                                    <button @onclick="() => { _viewingModel = capturedModel; _aiError = null; }">
+                                        @ModelLabel(capturedModel)
+                                    </button>
+                                    <button class="ai-refresh-btn" title="Refresh"
+                                            @onclick="() => RefreshModel(capturedModel)">↻</button>
+                                </div>
+                            }
+                        </div>
+
+                        @if (viewing.Value is not null)
+                        {
+                            <div class="ai-meta">
+                                Cached @viewing.Value.CachedAt.ToLocalTime().ToString("MMM d · h:mm tt")
+                            </div>
+                            <div class="ai-content">
+                                @((MarkupString)RenderMarkdown(viewing.Value.Response))
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        }
 
         <div class="diff-layout">
 
@@ -171,6 +265,14 @@ else
     private Dictionary<int, List<string>> _highlighted = [];
     private bool _highlighting;
 
+    // ── AI panel state ────────────────────────────────────────────────────
+    private bool    _aiPanelOpen  = false;
+    private string  _aiFeature    = "review";
+    private string  _selectedModel = "claude-sonnet-4-6";
+    private string? _viewingModel;
+    private bool    _aiRunning    = false;
+    private string? _aiError;
+
     protected override void OnParametersSet()
     {
         diff = Session.CurrentDiff;
@@ -178,6 +280,11 @@ else
         hiddenFiles.Clear();
         _highlighted.Clear();
         _highlighting = diff is not null;
+        _aiPanelOpen  = false;
+        _aiFeature    = "review";
+        _viewingModel = null;
+        _aiError      = null;
+        _aiRunning    = false;
         if (diff is null) Nav.NavigateTo("/");
     }
 
@@ -228,6 +335,91 @@ else
         if (!hiddenFiles.Remove(index))
             hiddenFiles.Add(index);
     }
+
+    // ── AI actions ────────────────────────────────────────────────────────
+
+    private void ToggleAiPanel(string feature)
+    {
+        if (_aiFeature == feature && _aiPanelOpen)
+        {
+            _aiPanelOpen = false;
+        }
+        else
+        {
+            _aiFeature   = feature;
+            _aiPanelOpen = true;
+            // Pick best model tab to show initially
+            if (diff is not null)
+            {
+                var cached = AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch)
+                    .Where(kv => kv.Key.feature == feature)
+                    .OrderByDescending(kv => kv.Value.CachedAt)
+                    .FirstOrDefault();
+                _viewingModel = cached.Value is not null ? cached.Key.model : null;
+            }
+            _aiError = null;
+        }
+    }
+
+    private async Task RunAi()
+    {
+        if (diff is null || _aiRunning) return;
+        await RunAiInner(_aiFeature, _selectedModel, refresh: false);
+    }
+
+    private async Task RefreshModel(string model)
+    {
+        if (diff is null || _aiRunning) return;
+        AiCache.Remove(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, _aiFeature, model);
+        await RunAiInner(_aiFeature, model, refresh: true);
+    }
+
+    private async Task RunAiInner(string feature, string model, bool refresh)
+    {
+        _aiRunning    = true;
+        _aiError      = null;
+        _viewingModel = model;
+        StateHasChanged();
+
+        try
+        {
+            var result = feature == "review"
+                ? await Claude.ReviewDiffAsync(diff!, model)
+                : await Claude.ExplainDiffAsync(diff!, model);
+
+            AiCache.Set(diff!.RepositoryPath, diff.BaseBranch, diff.CompareBranch, feature, model, result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _aiError = ex.Message;
+            ClaudeAuth.Reload();
+        }
+        catch (Exception ex)
+        {
+            _aiError = $"Request failed: {ex.Message}";
+        }
+        finally
+        {
+            _aiRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string RenderMarkdown(string markdown)
+    {
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+
+    private static string ModelLabel(string model) => model switch
+    {
+        "claude-opus-4-8"          => "Opus 4.8",
+        "claude-sonnet-4-6"        => "Sonnet 4.6",
+        "claude-haiku-4-5-20251001"=> "Haiku 4.5",
+        _                          => model,
+    };
+
+    // ── Export ────────────────────────────────────────────────────────────
 
     private async Task ExportMarkdown()
     {

@@ -444,6 +444,101 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   border: 1px solid var(--border);
 }
 
+/* ── Settings: Claude auth indicators ────────────────────────────────── */
+.auth-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
+}
+.auth-ok   { background: #22863a; }
+.auth-warn { background: #e36209; }
+.auth-off  { background: var(--fg-muted); }
+.auth-plan { color: var(--fg-muted); font-size: 12px; margin-left: 4px; }
+
+/* ── AI action bar ────────────────────────────────────────────────────── */
+.ai-action-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary); gap: 12px;
+}
+.ai-action-bar-left  { display: flex; align-items: center; gap: 6px; }
+.ai-action-bar-right { display: flex; align-items: center; gap: 8px; }
+.ai-model-label      { font-size: 12px; color: var(--fg-muted); }
+.ai-spinner          { font-size: 12px; color: var(--fg-secondary); font-style: italic; }
+.ai-auth-notice      { font-size: 13px; color: var(--fg-secondary); justify-content: center; }
+.btn-active          { border-color: var(--primary); color: var(--primary); background: var(--bg); }
+
+/* ── AI panel ────────────────────────────────────────────────────────── */
+.ai-panel {
+  border-bottom: 1px solid var(--border);
+  max-height: 420px; display: flex; flex-direction: column;
+}
+.ai-error {
+  padding: 8px 16px; font-size: 13px;
+  background: #ffdce0; color: #b31d28; border-bottom: 1px solid var(--border);
+}
+[data-theme="dark"] .ai-error { background: #3a0c0c; color: #ff7b72; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ai-error { background: #3a0c0c; color: #ff7b72; }
+}
+.ai-loading {
+  padding: 24px 16px; text-align: center;
+  font-size: 13px; color: var(--fg-secondary); font-style: italic;
+}
+.ai-empty {
+  padding: 24px 16px; text-align: center;
+  font-size: 13px; color: var(--fg-secondary);
+}
+.ai-model-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary); flex-shrink: 0;
+}
+.ai-model-tab {
+  display: flex; align-items: center;
+  border-right: 1px solid var(--border);
+}
+.ai-model-tab button {
+  padding: 6px 12px; font-size: 12px; border: none;
+  background: transparent; color: var(--fg-secondary); cursor: pointer;
+  font-family: inherit;
+}
+.ai-model-tab button:hover { color: var(--fg); }
+.ai-model-tab.active       { background: var(--bg); }
+.ai-model-tab.active button { color: var(--primary); font-weight: 600; }
+.ai-refresh-btn {
+  padding: 4px 8px; font-size: 13px; border: none;
+  background: transparent; color: var(--fg-muted); cursor: pointer;
+}
+.ai-refresh-btn:hover { color: var(--fg); }
+.ai-meta {
+  padding: 4px 16px; font-size: 11px; color: var(--fg-muted);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+.ai-content {
+  padding: 16px 20px; overflow-y: auto; flex: 1; font-size: 14px; line-height: 1.7;
+}
+.ai-content h1, .ai-content h2, .ai-content h3 {
+  font-size: 14px; font-weight: 700; margin: 16px 0 6px;
+}
+.ai-content h1:first-child, .ai-content h2:first-child, .ai-content h3:first-child {
+  margin-top: 0;
+}
+.ai-content p          { margin: 0 0 10px; }
+.ai-content p:last-child { margin-bottom: 0; }
+.ai-content ul, .ai-content ol { margin: 0 0 10px 18px; }
+.ai-content li         { margin-bottom: 4px; }
+.ai-content code       {
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 12px; background: var(--bg-secondary);
+  padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border);
+}
+.ai-content pre {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; overflow-x: auto;
+  margin: 0 0 10px;
+}
+.ai-content pre code { border: none; padding: 0; background: transparent; }
+.ai-content strong { font-weight: 600; }
+
 /* ── Blazor error UI ─────────────────────────────────────────────────── */
 #blazor-error-ui {
   background: #ffdce0; bottom: 0; box-shadow: 0 -1px 2px rgba(0,0,0,.2);

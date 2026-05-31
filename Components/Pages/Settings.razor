@@ -1,5 +1,6 @@
 @page "/settings"
 @inject ISettingsService Svc
+@inject IClaudeAuthService ClaudeAuth
 
 <div class="page narrow">
     <a class="back-link" href="@_returnUrl">← Back</a>
@@ -51,6 +52,41 @@
     </section>
 
     <section class="settings-section">
+        <p class="section-title">Claude AI</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (ClaudeAuth.State == ClaudeAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(ClaudeAuth.Email))
+                            {
+                                <span> · @ClaudeAuth.Email</span>
+                            }
+                            @if (!string.IsNullOrEmpty(ClaudeAuth.SubscriptionType))
+                            {
+                                <span class="auth-plan">(@ClaudeAuth.SubscriptionType)</span>
+                            }
+                        </p>
+                        <p class="setting-desc">To sign out, run <code>claude auth logout</code> in your terminal.</p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — install Claude Code and run <code>claude auth login</code>, then click Reload below.
+                        </p>
+                    }
+                </div>
+                <button class="btn btn-sm" @onclick="ReloadAuth">Reload</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <p class="section-title">About</p>
         <div class="setting-card">
             <div class="setting-row">
@@ -92,6 +128,12 @@
 
     private void SaveFontLigatures() =>
         Svc.FontLigatures = fontLigatures;
+
+    private void ReloadAuth()
+    {
+        ClaudeAuth.Reload();
+        StateHasChanged();
+    }
 
     private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";
 }
