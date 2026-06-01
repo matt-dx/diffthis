@@ -174,7 +174,23 @@ else
                             <strong>@ModelService.GetDisplayName(k.Model)</strong>
                         </span>
                         <span class="analysis-feature-badge">@featureLabel</span>
-                        <button class="eye-btn ml-auto" title="@(isHidden ? "Show" : "Hide")"
+                        @if (entry is not null)
+                        {
+                            var capturedEntry = entry;
+                            var capturedKey   = k;
+                            <button class="eye-btn ml-auto" title="Copy to clipboard"
+                                    @onclick="() => CopyEntry(capturedKey, capturedEntry)">
+                                @if (_copiedKey == k)
+                                {
+                                    <span style="font-size:11px;color:var(--add-fg)">✓</span>
+                                }
+                                else
+                                {
+                                    <span class="icon icon-clipboard"></span>
+                                }
+                            </button>
+                        }
+                        <button class="eye-btn @(entry is null ? "ml-auto" : "")" title="@(isHidden ? "Show" : "Hide")"
                                 @onclick="() => ToggleHidden(k)">
                             <span class="@EyeClass(isHidden)"></span>
                         </button>
@@ -243,6 +259,7 @@ else
     private string    _explainAddModel  = "";
     private string    _reviewAddModel   = "";
     private AiRunKey? _pendingDeleteKey;
+    private AiRunKey? _copiedKey;
     private DiffResult? _lastDiff;
 
     private DotNetObjectReference<AnalysisPanel>? _dotNetRef;
@@ -313,6 +330,16 @@ else
     {
         if (Diff is null || _runningKeys.Contains(key)) return;
         _ = RunAsync(key, refresh: true);
+    }
+
+    private async Task CopyEntry(AiRunKey key, AiCacheEntry entry)
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", entry.Response);
+        _copiedKey = key;
+        StateHasChanged();
+        await Task.Delay(1500);
+        if (_copiedKey == key) _copiedKey = null;
+        StateHasChanged();
     }
 
     private void DeleteEntry()

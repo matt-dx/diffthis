@@ -297,6 +297,10 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-item:hover .eye-btn:hover { opacity: 1; background: var(--border); }
 .eye-btn .icon { width: 13px; height: 13px; }
 
+/* Buttons in card headers are always visible (not hidden like sidebar items) */
+.file-header .eye-btn { opacity: 0.45; }
+.file-header .eye-btn:hover { opacity: 1; background: var(--border); }
+
 /* ── Status badges ───────────────────────────────────────────────────── */
 .status-badge {
   display: inline-block; padding: 1px 5px; border-radius: 3px;

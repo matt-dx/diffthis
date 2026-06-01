@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using DiffThis.Models;
 
 namespace DiffThis.Services;
@@ -15,18 +14,20 @@ public class ClaudeService : IClaudeService
 {
     private readonly IClaudeAuthService  _auth;
     private readonly IClaudeModelService _models;
+    private readonly PromptService       _prompts;
 
-    public ClaudeService(IClaudeAuthService auth, IClaudeModelService models)
+    public ClaudeService(IClaudeAuthService auth, IClaudeModelService models, PromptService prompts)
     {
-        _auth   = auth;
-        _models = models;
+        _auth    = auth;
+        _models  = models;
+        _prompts = prompts;
     }
 
     public Task<string> ReviewDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
-        => CallAsync(BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, ct);
+        => CallAsync(_prompts.BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, ct);
 
     public Task<string> ExplainDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
-        => CallAsync(BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, ct);
+        => CallAsync(_prompts.BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, ct);
 
     private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, CancellationToken ct)
     {
@@ -97,72 +98,4 @@ public class ClaudeService : IClaudeService
         err.Contains("no such model",     StringComparison.OrdinalIgnoreCase) ||
         err.Contains("model not found",   StringComparison.OrdinalIgnoreCase);
 
-    // ── Prompt builders ───────────────────────────────────────────────────
-
-    private static string BuildReviewPrompt(DiffResult diff)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"Review the following code diff from \"{diff.RepositoryName}\".");
-        sb.AppendLine($"Comparing: {diff.BaseDisplay} → {diff.CompareDisplay}");
-        sb.AppendLine($"{diff.Files.Count} files changed, +{diff.TotalAdditions} -{diff.TotalDeletions} lines");
-        sb.AppendLine();
-        sb.AppendLine("Identify bugs, logic errors, security issues, and notable improvements. " +
-                      "Reference specific file names and line numbers. Be concise and direct.");
-        sb.AppendLine();
-        AppendDiffContent(sb, diff);
-        return sb.ToString();
-    }
-
-    private static string BuildExplainPrompt(DiffResult diff)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"Explain the following code changes from \"{diff.RepositoryName}\" in plain English.");
-        sb.AppendLine($"Comparing: {diff.BaseDisplay} → {diff.CompareDisplay}");
-        sb.AppendLine($"{diff.Files.Count} files changed, +{diff.TotalAdditions} -{diff.TotalDeletions} lines");
-        sb.AppendLine();
-        sb.AppendLine("Describe what was changed, the likely intent, and the impact. " +
-                      "Write for a developer who needs a quick orientation to these changes.");
-        sb.AppendLine();
-        AppendDiffContent(sb, diff);
-        return sb.ToString();
-    }
-
-    private static void AppendDiffContent(StringBuilder sb, DiffResult diff)
-    {
-        const int maxChars = 60_000;
-        var written  = 0;
-        var truncated = false;
-
-        foreach (var file in diff.Files)
-        {
-            if (truncated) break;
-            if (written >= maxChars) { sb.AppendLine("\n... (diff truncated due to length)"); break; }
-            sb.AppendLine($"--- {file.DisplayPath}");
-
-            if (file.IsBinary) { sb.AppendLine("[binary file]"); continue; }
-
-            foreach (var hunk in file.Hunks)
-            {
-                if (truncated) break;
-                var ctx = hunk.Context.Length > 0 ? " " + hunk.Context : "";
-                sb.AppendLine($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@{ctx}");
-
-                foreach (var line in hunk.Lines)
-                {
-                    var sign = line.Type switch
-                    {
-                        DiffLineType.Addition => "+",
-                        DiffLineType.Deletion => "-",
-                        _                     => " ",
-                    };
-                    sb.AppendLine($"{sign}{line.Content}");
-                    written += line.Content.Length + 3; // sign(1) + content + \r\n(2)
-                    if (written < maxChars) continue;
-                    sb.AppendLine("\n... (diff truncated due to length)");
-                    truncated = true;
-                    break;
-                }
-            }
-        }
-    }
 }

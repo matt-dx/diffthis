@@ -1,3 +1,5 @@
+window.copyToClipboard = (text) => navigator.clipboard.writeText(text);
+
 window.scrollToElement = (id, fallbackId) => {
     const el = document.getElementById(id)
             ?? (fallbackId ? document.getElementById(fallbackId) : null);
