@@ -1,6 +1,9 @@
 @page "/settings"
 @inject ISettingsService Svc
 @inject IClaudeAuthService ClaudeAuth
+@inject IClaudeModelService ModelService
+@inject AiCacheService AiCache
+@implements IDisposable
 
 <div class="page narrow">
     <a class="back-link" href="@_returnUrl">← Back</a>
@@ -47,6 +50,15 @@
                         <option value="@n">@n</option>
                     }
                 </select>
+            </div>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Clear history</p>
+                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
             </div>
         </div>
     </section>
@@ -111,7 +123,80 @@
             </div>
             <p class="setting-desc" style="font-style:italic;margin-top:12px">These are defaults. You can override them per-run in the diff view.</p>
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <button class="collapsible-label" @onclick="() => _modelsExpanded = !_modelsExpanded">
+                        <span class="collapsible-chevron @(_modelsExpanded ? "open" : "")">›</span>
+                        <p class="setting-label" style="display:inline">Available models</p>
+                    </button>
+                    <p class="setting-desc">
+                        @if (ModelService.LastFetchedAt.HasValue)
+                        {
+                            <span>@ModelService.Models.Count model@(ModelService.Models.Count == 1 ? "" : "s") · last updated @ModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
+                        }
+                        else
+                        {
+                            <span>Never fetched</span>
+                        }
+                    </p>
+                </div>
+                <button class="btn btn-sm" disabled="@ModelService.IsLoading"
+                        @onclick="RefreshModels">
+                    @(ModelService.IsLoading ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+            @if (_modelsExpanded && ModelService.Models.Count > 0)
+            {
+                <div class="model-list">
+                    @foreach (var model in ModelService.Models)
+                    {
+                        var capturedId = model.Id;
+                        <div class="model-list-item">
+                            <div class="model-list-meta">
+                                <code class="model-list-id">@model.Id</code>
+                            </div>
+                            <div class="model-list-name-row">
+                                <input class="model-name-input"
+                                       value="@model.DisplayName"
+                                       @onchange="e => ModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                       title="Edit display name" />
+                                @if (model.IsCustomName)
+                                {
+                                    <button class="model-reset-btn" title="Reset to default name"
+                                            @onclick="() => ModelService.ResetDisplayName(capturedId)">↺</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Cached results</p>
+                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored.")</p>
+                </div>
+                <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
+                        @onclick="() => _showClearCacheConfirm = true">Clear</button>
+            </div>
+        </div>
     </section>
+
+    @if (_showClearCacheConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearCacheConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear cached results?</p>
+                <p class="modal-body">All @AiCache.Count stored AI response@(AiCache.Count == 1 ? "" : "s") will be deleted. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearCacheConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearAiCache">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
 
     <section class="settings-section">
         <p class="section-title">About</p>
@@ -138,15 +223,24 @@
     private bool fontLigatures;
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
+    private bool _showClearCacheConfirm;
+    private bool _modelsExpanded;
 
     protected override void OnInitialized()
     {
-        _returnUrl = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
+        _returnUrl     = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
         maxRecent      = Svc.MaxRecentRepositories;
         fontLigatures  = Svc.FontLigatures;
         aiToolsEnabled = Svc.AiToolsEnabled;
         aiMaxTurns     = Svc.AiMaxTurns;
+        ModelService.ModelsChanged += OnModelsChanged;
     }
+
+    private void OnModelsChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ModelService.ModelsChanged -= OnModelsChanged;
+
+    private async Task RefreshModels() => await ModelService.RefreshAsync();
 
     private void SetTheme(AppTheme theme)
     {
@@ -162,6 +256,19 @@
 
     private void SaveAiTools()    => Svc.AiToolsEnabled = aiToolsEnabled;
     private void SaveAiMaxTurns() => Svc.AiMaxTurns     = aiMaxTurns;
+
+    private void ClearRepoHistory()
+    {
+        foreach (var path in Svc.RecentRepositoryPaths.ToList())
+            Svc.RemoveRecentRepository(path);
+        StateHasChanged();
+    }
+
+    private void ClearAiCache()
+    {
+        AiCache.Clear();
+        _showClearCacheConfirm = false;
+    }
 
     private void ReloadAuth()
     {

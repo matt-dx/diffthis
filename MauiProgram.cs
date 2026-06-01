@@ -36,6 +36,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IExportService, ExportService>();
         builder.Services.AddSingleton<DiffSessionService>();
         builder.Services.AddSingleton<IClaudeAuthService, ClaudeAuthService>();
+        builder.Services.AddSingleton<IClaudeModelService, ClaudeModelService>();
         builder.Services.AddSingleton<IClaudeService, ClaudeService>();
         builder.Services.AddSingleton<AiCacheService>();
 

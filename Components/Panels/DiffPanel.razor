@@ -1,0 +1,231 @@
+@inject ISettingsService Settings
+@inject IJSRuntime JS
+
+@if (Diff is not null)
+{
+    <div class="diff-layout">
+
+        <!-- File sidebar -->
+        <aside class="file-sidebar">
+            <div class="sidebar-heading">Changed Files</div>
+            @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
+            {
+                var hidden = _hiddenFiles.Contains(i);
+                <div class="file-item @(_selectedIndex == i ? "active" : "") @(hidden ? "file-hidden" : "")"
+                     @onclick="() => ScrollToFile(i)">
+                    <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
+                    <div class="file-info">
+                        <span class="file-name">@file.FileName</span>
+                        @if (!string.IsNullOrEmpty(file.FileDirectory))
+                        {
+                            <span class="file-dir">@file.FileDirectory</span>
+                        }
+                    </div>
+                    <div class="file-stats">
+                        <span class="add">+@file.Additions</span>
+                        <span class="del">-@file.Deletions</span>
+                    </div>
+                    <button class="eye-btn" title="@(hidden ? "Show file" : "Hide file")"
+                            @onclick:stopPropagation
+                            @onclick="() => ToggleFile(i)">
+                        @if (hidden)
+                        {
+                            <!-- eye-off -->
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                        }
+                        else
+                        {
+                            <!-- eye -->
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        }
+                    </button>
+                </div>
+            }
+        </aside>
+
+        <!-- Diff content -->
+        <div class="diff-content">
+            @if (Diff.Files.Count == 0)
+            {
+                <div class="diff-empty">
+                    <p class="diff-empty-title">No differences found</p>
+                    <p class="diff-empty-sub">
+                        <code>@Diff.BaseDisplay</code> and <code>@Diff.CompareDisplay</code> are identical.
+                    </p>
+                    <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(Diff.RepositoryPath)">← Change branches</a>
+                </div>
+            }
+            @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
+            {
+                <div class="diff-file @(_hiddenFiles.Contains(i) ? "diff-file-hidden" : "")" id="file-@i">
+                    <div class="file-header">
+                        <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
+                        <span class="file-path">
+                            <span class="dir">@file.FileDirectory</span><strong>@file.FileName</strong>
+                        </span>
+                        <span class="file-stats ml-auto">
+                            <span class="add">+@file.Additions</span>
+                            <span class="del">-@file.Deletions</span>
+                        </span>
+                    </div>
+
+                    @if (file.IsBinary)
+                    {
+                        <div class="diff-note">Binary file</div>
+                    }
+                    else if (file.Hunks.Count == 0)
+                    {
+                        <div class="diff-note">No textual changes</div>
+                    }
+                    else
+                    {
+                        var hlLines = _highlighted.TryGetValue(i, out var hl) ? hl : null;
+                        var lineIdx = 0;
+                        foreach (var hunk in file.Hunks)
+                        {
+                            <div class="hunk-header">
+                                @($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@")
+                                @if (!string.IsNullOrEmpty(hunk.Context))
+                                {
+                                    <span class="hunk-ctx">@hunk.Context</span>
+                                }
+                            </div>
+                            <table class="diff-table">
+                                <tbody>
+                                    @foreach (var line in hunk.Lines)
+                                    {
+                                        var capturedIdx = lineIdx;
+                                        <tr class="@LineCss(line.Type)">
+                                            <td class="ln">@line.OldLineNumber</td>
+                                            <td class="ln">@line.NewLineNumber</td>
+                                            <td class="sign">@LineSign(line.Type)</td>
+                                            <td class="code">
+                                                @if (hlLines != null && capturedIdx < hlLines.Count)
+                                                {
+                                                    @((MarkupString)hlLines[capturedIdx])
+                                                }
+                                                else
+                                                {
+                                                    @line.Content
+                                                }
+                                            </td>
+                                        </tr>
+                                        lineIdx++;
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+    </div>
+}
+
+@code {
+    [Parameter] public DiffResult? Diff { get; set; }
+
+    private int _selectedIndex = -1;
+    private HashSet<int> _hiddenFiles = [];
+    private Dictionary<int, List<string>> _highlighted = [];
+    private bool _highlighting;
+    private DiffResult? _lastDiff;
+
+    protected override void OnParametersSet()
+    {
+        if (_lastDiff == Diff) return;
+        _lastDiff = Diff;
+        _selectedIndex = -1;
+        _hiddenFiles.Clear();
+        _highlighted.Clear();
+        _highlighting = Diff is not null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_highlighting) return;
+        _highlighting = false;
+        try
+        {
+            await Task.Run(ComputeHighlighting);
+        }
+        catch { /* partial results are fine */ }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ComputeHighlighting()
+    {
+        if (Diff is null) return;
+        foreach (var (file, fi) in Diff.Files.Select((f, i) => (f, i)))
+        {
+            if (file.IsBinary || file.Hunks.Count == 0) continue;
+            var lang = SyntaxHighlighter.GetLanguage(file.FileName);
+            if (lang is null) continue;
+            try
+            {
+                var lines = new List<string>();
+                foreach (var hunk in file.Hunks)
+                {
+                    var contents = hunk.Lines.Select(l => l.Content).ToArray();
+                    lines.AddRange(SyntaxHighlighter.HighlightLines(contents, lang));
+                }
+                _highlighted[fi] = lines;
+            }
+            catch { /* skip file; renders as plain text */ }
+        }
+    }
+
+    private async Task ScrollToFile(int index)
+    {
+        _hiddenFiles.Remove(index);
+        _selectedIndex = index;
+        await JS.InvokeVoidAsync("scrollToElement", $"file-{index}");
+    }
+
+    private void ToggleFile(int index)
+    {
+        if (!_hiddenFiles.Remove(index))
+            _hiddenFiles.Add(index);
+    }
+
+    private static string LineCss(DiffLineType t) => t switch
+    {
+        DiffLineType.Addition => "add-line",
+        DiffLineType.Deletion => "del-line",
+        _                     => "ctx-line"
+    };
+
+    private static string LineSign(DiffLineType t) => t switch
+    {
+        DiffLineType.Addition => "+",
+        DiffLineType.Deletion => "-",
+        _                     => " "
+    };
+
+    private static string StatusCss(DiffFileStatus s) => s switch
+    {
+        DiffFileStatus.Added    => "badge-added",
+        DiffFileStatus.Deleted  => "badge-deleted",
+        DiffFileStatus.Renamed  => "badge-renamed",
+        DiffFileStatus.Copied   => "badge-copied",
+        _                       => "badge-modified"
+    };
+
+    private static string StatusLabel(DiffFileStatus s) => s switch
+    {
+        DiffFileStatus.Added    => "A",
+        DiffFileStatus.Deleted  => "D",
+        DiffFileStatus.Renamed  => "R",
+        DiffFileStatus.Copied   => "C",
+        _                       => "M"
+    };
+}

@@ -17,5 +17,8 @@ public interface ISettingsService
     bool AiToolsEnabled { get; set; }  // default: false
     int  AiMaxTurns     { get; set; }  // default: 5 (0 = unlimited)
 
+    // ── MainView layout ────────────────────────────────────────────────────
+    bool MainViewSideBySide { get; set; }  // default: false (tabbed)
+
     event Action? ThemeChanged;
 }

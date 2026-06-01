@@ -1,0 +1,113 @@
+@page "/diff"
+@inject DiffSessionService Session
+@inject IExportService Export
+@inject ISettingsService Settings
+@inject AiCacheService AiCache
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (_diff is null)
+{
+    <div class="page"><p>No diff loaded. <a href="/">Go home</a></p></div>
+}
+else
+{
+    <div class="main-view @(Settings.FontLigatures ? "ligatures" : "")">
+
+        <!-- Toolbar -->
+        <div class="diff-toolbar">
+            <div class="toolbar-title">
+                <span class="tname">@_diff.RepositoryName</span>
+                <span class="sep">:</span>
+                <code>@_diff.BaseDisplay</code>
+                <span class="arrow">→</span>
+                <code>@_diff.CompareDisplay</code>
+            </div>
+            <div class="toolbar-summary">
+                <span>@_diff.Files.Count files</span>
+                <span class="add">+@_diff.TotalAdditions</span>
+                <span class="del">-@_diff.TotalDeletions</span>
+            </div>
+            <div class="toolbar-actions">
+                <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)">← Branches</a>
+                <a class="btn btn-sm" href="/">← Repositories</a>
+                <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
+                <button class="btn btn-sm @(_sideBySide ? "btn-active" : "")" @onclick="ToggleLayout">
+                    @(_sideBySide ? "Side by Side" : "Tabs")
+                </button>
+                <a class="btn btn-sm" href="/settings?from=/diff">Settings</a>
+            </div>
+        </div>
+
+        @if (_sideBySide)
+        {
+            <!-- Side-by-side layout -->
+            <div class="panels-side-by-side">
+                <div class="panel-column">
+                    <div class="panel-heading">Diff</div>
+                    <DiffPanel Diff="_diff" />
+                </div>
+                <div class="panel-column panel-column-border">
+                    <div class="panel-heading">Analysis</div>
+                    <AnalysisPanel Diff="_diff" />
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Tabbed layout -->
+            <div class="panel-tabs-bar">
+                <button class="panel-tab @(_activeTab == 0 ? "panel-tab-active" : "")"
+                        @onclick='() => _activeTab = 0'>Diff</button>
+                <button class="panel-tab @(_activeTab == 1 ? "panel-tab-active" : "")"
+                        @onclick='() => _activeTab = 1'>Analysis</button>
+            </div>
+            <div class="panel-tab-content">
+                @if (_activeTab == 0)
+                {
+                    <DiffPanel Diff="_diff" />
+                }
+                else
+                {
+                    <AnalysisPanel Diff="_diff" />
+                }
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    private DiffResult? _diff;
+    private bool _sideBySide;
+    private int  _activeTab = 0;
+
+    protected override void OnParametersSet()
+    {
+        _diff       = Session.CurrentDiff;
+        _sideBySide = Settings.MainViewSideBySide;
+        if (_diff is null) Nav.NavigateTo("/");
+    }
+
+    private void ToggleLayout()
+    {
+        _sideBySide = !_sideBySide;
+        Settings.MainViewSideBySide = _sideBySide;
+    }
+
+    private async Task ExportMarkdown()
+    {
+        if (_diff is null) return;
+        var aiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
+        var path = ExportPath("md");
+        await Export.ExportMarkdownAsync(_diff, aiResults, path);
+        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}");
+    }
+
+    private string ExportPath(string ext)
+    {
+        var name = $"diff_{_diff!.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
+            .Replace('/', '-').Replace('\\', '-');
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), name);
+    }
+}

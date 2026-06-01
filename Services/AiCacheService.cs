@@ -52,6 +52,14 @@ public class AiCacheService
         Save();
     }
 
+    public int Count => _cache.Count;
+
+    public void Clear()
+    {
+        _cache.Clear();
+        Save();
+    }
+
     public void Remove(string repoPath, string baseRef, string compareRef, AiRunKey runKey)
     {
         if (_cache.TryRemove(CacheKey(repoPath, baseRef, compareRef, runKey), out _))

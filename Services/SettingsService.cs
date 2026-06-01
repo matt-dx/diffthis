@@ -10,8 +10,9 @@ public class SettingsService : ISettingsService
     private const string RecentReposKey    = "recent_repos";
     private const string FontLigaturesKey  = "font_ligatures";
     private const string BranchStatesKey   = "branch_states";
-    private const string AiToolsKey        = "ai_tools_enabled";
-    private const string AiMaxTurnsKey     = "ai_max_turns";
+    private const string AiToolsKey           = "ai_tools_enabled";
+    private const string AiMaxTurnsKey        = "ai_max_turns";
+    private const string MainViewSideBySideKey = "main_view_side_by_side";
 
     public event Action? ThemeChanged;
 
@@ -83,6 +84,12 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(AiMaxTurnsKey, 5);
         set => Preferences.Set(AiMaxTurnsKey, value);
+    }
+
+    public bool MainViewSideBySide
+    {
+        get => Preferences.Get(MainViewSideBySideKey, false);
+        set => Preferences.Set(MainViewSideBySideKey, value);
     }
 
     public void SaveBranchState(string repoPath, BranchSelectionState state)

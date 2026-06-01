@@ -1,0 +1,270 @@
+@inject IClaudeAuthService ClaudeAuth
+@inject IClaudeService Claude
+@inject IClaudeModelService ModelService
+@inject AiCacheService AiCache
+@inject ISettingsService Settings
+@using Markdig
+@implements IDisposable
+
+@if (ClaudeAuth.State != ClaudeAuthState.Authenticated)
+{
+    <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
+        <p>Sign in to Claude to use AI features.</p>
+        <p>Run <code>claude auth login</code> in a terminal, then restart DiffThis.</p>
+    </div>
+}
+else if (Diff is null)
+{
+    <div class="analysis-panel analysis-panel-empty">No diff loaded.</div>
+}
+else
+{
+    <div class="analysis-panel @(Settings.FontLigatures ? "ligatures" : "")">
+
+        <!-- Feature + config bar -->
+        <div class="ai-action-bar">
+            <div class="ai-action-bar-left">
+                <button class="btn btn-sm @(_aiFeature == "review" ? "btn-active" : "")"
+                        @onclick='() => SetFeature("review")'>Code Review</button>
+                <button class="btn btn-sm @(_aiFeature == "explain" ? "btn-active" : "")"
+                        @onclick='() => SetFeature("explain")'>Explain Changes</button>
+            </div>
+            <div class="ai-action-bar-right">
+                <label class="ai-model-label">Model</label>
+                @if (ModelService.IsLoading && ModelService.Models.Count == 0)
+                {
+                    <select class="select-sm" disabled>
+                        <option>Loading models…</option>
+                    </select>
+                }
+                else
+                {
+                    <select class="select-sm" @bind="_selectedModel">
+                        @foreach (var m in ModelService.Models)
+                        {
+                            <option value="@m.Id">@m.DisplayName</option>
+                        }
+                    </select>
+                }
+                <label class="ai-model-label" style="margin-left:4px">Max turns</label>
+                <select class="select-sm" @bind="_aiMaxTurns">
+                    @foreach (var (label, val) in MaxTurnsOptions)
+                    {
+                        <option value="@val">@label</option>
+                    }
+                </select>
+                <label class="ai-tools-label">
+                    <input type="checkbox" @bind="_aiToolsEnabled" />
+                    Tools
+                </label>
+                @if (_aiRunning)
+                {
+                    <span class="ai-spinner">Running…</span>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="RunAi">Run</button>
+                }
+            </div>
+        </div>
+
+        <!-- Results area -->
+        @{
+            var allEntries = AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch);
+            var featureEntries = allEntries
+                .Where(kv => kv.Key.Feature == _aiFeature)
+                .OrderBy(kv => kv.Value.CachedAt)
+                .ToList();
+            var viewing = _viewingRunKey is not null
+                ? featureEntries.FirstOrDefault(kv => kv.Key == _viewingRunKey)
+                : default;
+            if (viewing.Value is null && featureEntries.Count > 0)
+                viewing = featureEntries.Last();
+        }
+
+        @if (_aiError is not null)
+        {
+            <div class="ai-error">@_aiError</div>
+        }
+
+        @if (_aiRunning)
+        {
+            <div class="ai-loading">
+                Generating with @CurrentRunKey.TabLabel(ModelService.GetDisplayName(_selectedModel))…
+            </div>
+        }
+        else if (featureEntries.Count == 0)
+        {
+            <div class="ai-empty">
+                Configure options above and click <strong>Run</strong> to generate
+                @(_aiFeature == "review" ? "a code review" : "an explanation").
+            </div>
+        }
+        else
+        {
+            <!-- Result tabs -->
+            <div class="ai-model-tabs">
+                @foreach (var (runKey, entry) in featureEntries)
+                {
+                    var capturedKey = runKey;
+                    var isActive    = viewing.Value is not null && viewing.Key == capturedKey;
+                    <div class="ai-model-tab @(isActive ? "active" : "")">
+                        <button @onclick="() => { _viewingRunKey = capturedKey; _aiError = null; }">
+                            @capturedKey.TabLabel(ModelService.GetDisplayName(capturedKey.Model))
+                        </button>
+                        <button class="ai-refresh-btn" title="Refresh"
+                                @onclick="() => RefreshRun(capturedKey)">↻</button>
+                    </div>
+                }
+            </div>
+
+            @if (viewing.Value is not null)
+            {
+                <div class="ai-meta">
+                    Cached @viewing.Value.CachedAt.ToLocalTime().ToString("MMM d · h:mm tt")
+                </div>
+                <div class="ai-content">
+                    @((MarkupString)RenderMarkdown(viewing.Value.Response))
+                </div>
+            }
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter] public DiffResult? Diff { get; set; }
+
+    private string    _aiFeature      = "review";
+    private string    _selectedModel  = "";
+    private bool      _aiToolsEnabled;
+    private int       _aiMaxTurns;
+    private AiRunKey? _viewingRunKey;
+    private bool      _aiRunning      = false;
+    private string?   _aiError;
+    private DiffResult? _lastDiff;
+
+    private AiRunKey CurrentRunKey =>
+        new(_aiFeature, _selectedModel, _aiToolsEnabled, _aiMaxTurns);
+
+    private static readonly (string label, int val)[] MaxTurnsOptions =
+    [
+        ("1 turn",    1),
+        ("3 turns",   3),
+        ("5 turns",   5),
+        ("10 turns", 10),
+        ("20 turns", 20),
+        ("Unlimited",  0),
+    ];
+
+    protected override void OnInitialized()
+    {
+        ModelService.ModelsChanged += OnModelsChanged;
+        // Pick a sensible default from the live list if available
+        if (ModelService.Models.Count > 0)
+            _selectedModel = ModelService.Models[0].Id;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_lastDiff == Diff) return;
+        _lastDiff       = Diff;
+        _aiFeature      = "review";
+        _aiToolsEnabled = Settings.AiToolsEnabled;
+        _aiMaxTurns     = Settings.AiMaxTurns;
+        _viewingRunKey  = null;
+        _aiError        = null;
+        _aiRunning      = false;
+
+        if (Diff is not null)
+        {
+            var cached = AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch)
+                .Where(kv => kv.Key.Feature == _aiFeature)
+                .OrderByDescending(kv => kv.Value.CachedAt)
+                .FirstOrDefault();
+            _viewingRunKey = cached.Value is not null ? cached.Key : null;
+        }
+    }
+
+    private void OnModelsChanged()
+    {
+        // Pick a default model if we haven't chosen one yet
+        if (string.IsNullOrEmpty(_selectedModel) && ModelService.Models.Count > 0)
+            _selectedModel = ModelService.Models[0].Id;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => ModelService.ModelsChanged -= OnModelsChanged;
+
+    private void SetFeature(string feature)
+    {
+        if (_aiFeature == feature) return;
+        _aiFeature     = feature;
+        _viewingRunKey = null;
+        _aiError       = null;
+
+        if (Diff is not null)
+        {
+            var cached = AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch)
+                .Where(kv => kv.Key.Feature == feature)
+                .OrderByDescending(kv => kv.Value.CachedAt)
+                .FirstOrDefault();
+            _viewingRunKey = cached.Value is not null ? cached.Key : null;
+        }
+    }
+
+    private async Task RunAi()
+    {
+        if (Diff is null || _aiRunning) return;
+        await RunAiInner(CurrentRunKey);
+    }
+
+    private async Task RefreshRun(AiRunKey runKey)
+    {
+        if (Diff is null || _aiRunning) return;
+        AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, runKey);
+        await RunAiInner(runKey);
+    }
+
+    private async Task RunAiInner(AiRunKey runKey)
+    {
+        _aiRunning     = true;
+        _aiError       = null;
+        _viewingRunKey = runKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = runKey.Feature == "review"
+                ? await Claude.ReviewDiffAsync(Diff!, runKey.Model, runKey.ToolsEnabled, runKey.MaxTurns)
+                : await Claude.ExplainDiffAsync(Diff!, runKey.Model, runKey.ToolsEnabled, runKey.MaxTurns);
+
+            AiCache.Set(Diff!.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, runKey, result);
+        }
+        catch (ModelUnavailableException ex)
+        {
+            var name = ModelService.GetDisplayName(ex.ModelId);
+            _aiError = $"\"{name}\" is no longer available. The model list has been refreshed — please select another model.";
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _aiError = ex.Message;
+            ClaudeAuth.Reload();
+        }
+        catch (Exception ex)
+        {
+            _aiError = $"Request failed: {ex.Message}";
+        }
+        finally
+        {
+            _aiRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string RenderMarkdown(string markdown)
+    {
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+}

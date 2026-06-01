@@ -4,18 +4,23 @@ using DiffThis.Models;
 
 namespace DiffThis.Services;
 
+/// Thrown when the claude CLI rejects a model ID as unknown or unavailable.
+public class ModelUnavailableException(string modelId)
+    : Exception($"Model \"{modelId}\" is not currently available.")
+{
+    public string ModelId { get; } = modelId;
+}
+
 public class ClaudeService : IClaudeService
 {
-    public string[] AvailableModels { get; } =
-    [
-        "claude-sonnet-4-6",
-        "claude-opus-4-5",           // was claude-opus-4-8 (invalid)
-        "claude-haiku-4-5-20251001",
-    ];
+    private readonly IClaudeAuthService  _auth;
+    private readonly IClaudeModelService _models;
 
-    private readonly IClaudeAuthService _auth;
-
-    public ClaudeService(IClaudeAuthService auth) => _auth = auth;
+    public ClaudeService(IClaudeAuthService auth, IClaudeModelService models)
+    {
+        _auth   = auth;
+        _models = models;
+    }
 
     public Task<string> ReviewDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
         => CallAsync(BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, ct);
@@ -25,22 +30,19 @@ public class ClaudeService : IClaudeService
 
     private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, CancellationToken ct)
     {
-        // Guard: surface a clear error rather than an opaque subprocess failure
         if (_auth.State != ClaudeAuthState.Authenticated)
             throw new InvalidOperationException("Not connected to Claude. Check Settings.");
 
-        // Pass the prompt via stdin to avoid Windows command-line length limits.
-        // `claude -p` with no inline argument reads the prompt from stdin.
         var psi = new ProcessStartInfo(ClaudeAuthService.ClaudeExe)
         {
-            UseShellExecute         = false,
-            RedirectStandardInput   = true,
-            RedirectStandardOutput  = true,
-            RedirectStandardError   = true,
-            StandardOutputEncoding  = System.Text.Encoding.UTF8,
-            StandardErrorEncoding   = System.Text.Encoding.UTF8,
-            CreateNoWindow          = true,
-            WorkingDirectory        = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            UseShellExecute        = false,
+            RedirectStandardInput  = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding  = System.Text.Encoding.UTF8,
+            CreateNoWindow         = true,
+            WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         };
         psi.ArgumentList.Add("-p");
         psi.ArgumentList.Add("--model");         psi.ArgumentList.Add(model);
@@ -57,7 +59,6 @@ public class ClaudeService : IClaudeService
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start claude process.");
 
-        // Write prompt to stdin then close so the process sees EOF
         await proc.StandardInput.WriteAsync(prompt.AsMemory(), ct);
         proc.StandardInput.Close();
 
@@ -70,6 +71,14 @@ public class ClaudeService : IClaudeService
         if (proc.ExitCode != 0)
         {
             var err = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+
+            // Unknown/removed model — trigger a background refresh and let the caller handle it
+            if (IsModelUnavailableError(err))
+            {
+                _ = _models.RefreshAsync();
+                throw new ModelUnavailableException(model);
+            }
+
             if (err.Contains("rate limit", StringComparison.OrdinalIgnoreCase) || err.Contains("429"))
                 throw new HttpRequestException("Rate limit reached. Wait a moment and try again.");
             if (err.Contains("auth") || err.Contains("login") || err.Contains("401"))
@@ -80,6 +89,13 @@ public class ClaudeService : IClaudeService
 
         return stdout;
     }
+
+    private static bool IsModelUnavailableError(string err) =>
+        err.Contains("unknown model",     StringComparison.OrdinalIgnoreCase) ||
+        err.Contains("invalid model",     StringComparison.OrdinalIgnoreCase) ||
+        err.Contains("does not exist",    StringComparison.OrdinalIgnoreCase) ||
+        err.Contains("no such model",     StringComparison.OrdinalIgnoreCase) ||
+        err.Contains("model not found",   StringComparison.OrdinalIgnoreCase);
 
     // ── Prompt builders ───────────────────────────────────────────────────
 
@@ -114,7 +130,7 @@ public class ClaudeService : IClaudeService
     private static void AppendDiffContent(StringBuilder sb, DiffResult diff)
     {
         const int maxChars = 60_000;
-        var written = 0;
+        var written  = 0;
         var truncated = false;
 
         foreach (var file in diff.Files)
