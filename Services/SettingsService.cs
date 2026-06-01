@@ -5,11 +5,13 @@ namespace DiffThis.Services;
 
 public class SettingsService : ISettingsService
 {
-    private const string ThemeKey        = "theme";
-    private const string MaxRecentKey    = "max_recent";
-    private const string RecentReposKey  = "recent_repos";
-    private const string FontLigaturesKey = "font_ligatures";
-    private const string BranchStatesKey = "branch_states";
+    private const string ThemeKey          = "theme";
+    private const string MaxRecentKey      = "max_recent";
+    private const string RecentReposKey    = "recent_repos";
+    private const string FontLigaturesKey  = "font_ligatures";
+    private const string BranchStatesKey   = "branch_states";
+    private const string AiToolsKey        = "ai_tools_enabled";
+    private const string AiMaxTurnsKey     = "ai_max_turns";
 
     public event Action? ThemeChanged;
 
@@ -69,6 +71,18 @@ public class SettingsService : ISettingsService
         var json = Preferences.Get(BranchStatesKey, "{}");
         var dict = JsonSerializer.Deserialize<Dictionary<string, BranchSelectionState>>(json);
         return dict is not null && dict.TryGetValue(repoPath, out var state) ? state : null;
+    }
+
+    public bool AiToolsEnabled
+    {
+        get => Preferences.Get(AiToolsKey, false);
+        set => Preferences.Set(AiToolsKey, value);
+    }
+
+    public int AiMaxTurns
+    {
+        get => Preferences.Get(AiMaxTurnsKey, 5);
+        set => Preferences.Set(AiMaxTurnsKey, value);
     }
 
     public void SaveBranchState(string repoPath, BranchSelectionState state)

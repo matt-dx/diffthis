@@ -84,6 +84,33 @@
                 <button class="btn btn-sm" @onclick="ReloadAuth">Reload</button>
             </div>
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Tool use</p>
+                    <p class="setting-desc">Allow Claude to read files and run commands when reviewing. Produces richer results but uses more turns.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="aiToolsEnabled" @bind:after="SaveAiTools" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row" style="margin-top:12px">
+                <div>
+                    <p class="setting-label">Max turns</p>
+                    <p class="setting-desc">Maximum agentic turns per request. Higher values allow deeper analysis; 0 means unlimited.</p>
+                </div>
+                <select class="select-sm" @bind="aiMaxTurns" @bind:after="SaveAiMaxTurns">
+                    <option value="1">1 turn</option>
+                    <option value="3">3 turns</option>
+                    <option value="5">5 turns</option>
+                    <option value="10">10 turns</option>
+                    <option value="20">20 turns</option>
+                    <option value="0">Unlimited</option>
+                </select>
+            </div>
+            <p class="setting-desc" style="font-style:italic;margin-top:12px">These are defaults. You can override them per-run in the diff view.</p>
+        </div>
     </section>
 
     <section class="settings-section">
@@ -107,14 +134,18 @@
 
     private string _returnUrl = "/";
 
-    private int maxRecent;
+    private int  maxRecent;
     private bool fontLigatures;
+    private bool aiToolsEnabled;
+    private int  aiMaxTurns;
 
     protected override void OnInitialized()
     {
         _returnUrl = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
-        maxRecent = Svc.MaxRecentRepositories;
-        fontLigatures = Svc.FontLigatures;
+        maxRecent      = Svc.MaxRecentRepositories;
+        fontLigatures  = Svc.FontLigatures;
+        aiToolsEnabled = Svc.AiToolsEnabled;
+        aiMaxTurns     = Svc.AiMaxTurns;
     }
 
     private void SetTheme(AppTheme theme)
@@ -128,6 +159,9 @@
 
     private void SaveFontLigatures() =>
         Svc.FontLigatures = fontLigatures;
+
+    private void SaveAiTools()    => Svc.AiToolsEnabled = aiToolsEnabled;
+    private void SaveAiMaxTurns() => Svc.AiMaxTurns     = aiMaxTurns;
 
     private void ReloadAuth()
     {

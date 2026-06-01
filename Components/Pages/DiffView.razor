@@ -57,6 +57,17 @@ else
                             <option value="@m">@ModelLabel(m)</option>
                         }
                     </select>
+                    <label class="ai-model-label" style="margin-left:4px">Max turns</label>
+                    <select class="select-sm" @bind="_aiMaxTurns">
+                        @foreach (var (label, val) in MaxTurnsOptions)
+                        {
+                            <option value="@val">@label</option>
+                        }
+                    </select>
+                    <label class="ai-tools-label">
+                        <input type="checkbox" @bind="_aiToolsEnabled" />
+                        Tools
+                    </label>
                     @if (_aiRunning)
                     {
                         <span class="ai-spinner">Running…</span>
@@ -73,10 +84,12 @@ else
             {
                 var allEntries = AiCache.GetAll(diff!.RepositoryPath, diff.BaseBranch, diff.CompareBranch);
                 var featureEntries = allEntries
-                    .Where(kv => kv.Key.feature == _aiFeature)
+                    .Where(kv => kv.Key.Feature == _aiFeature)
                     .OrderBy(kv => kv.Value.CachedAt)
                     .ToList();
-                var viewing = featureEntries.FirstOrDefault(kv => kv.Key.model == _viewingModel);
+                var viewing = _viewingRunKey is not null
+                    ? featureEntries.FirstOrDefault(kv => kv.Key == _viewingRunKey)
+                    : default;
                 if (viewing.Value is null && featureEntries.Count > 0)
                     viewing = featureEntries.Last();
                 <div class="ai-panel">
@@ -87,30 +100,30 @@ else
                     @if (_aiRunning)
                     {
                         <div class="ai-loading">
-                            Generating response with @ModelLabel(_selectedModel)…
+                            Generating with @CurrentRunKey.TabLabel(ModelLabel(_selectedModel))…
                         </div>
                     }
                     else if (featureEntries.Count == 0)
                     {
                         <div class="ai-empty">
-                            Select a model and click <strong>Run</strong> to generate
+                            Configure options above and click <strong>Run</strong> to generate
                             @(_aiFeature == "review" ? "a code review" : "an explanation").
                         </div>
                     }
                     else
                     {
-                        <!-- Model tabs -->
+                        <!-- Result tabs — one per unique (model × config) combo -->
                         <div class="ai-model-tabs">
-                            @foreach (var (key, entry) in featureEntries)
+                            @foreach (var (runKey, entry) in featureEntries)
                             {
-                                var capturedModel = key.model;
-                                var isActive      = (viewing.Value is not null && viewing.Key.model == capturedModel);
+                                var capturedKey = runKey;
+                                var isActive    = viewing.Value is not null && viewing.Key == capturedKey;
                                 <div class="ai-model-tab @(isActive ? "active" : "")">
-                                    <button @onclick="() => { _viewingModel = capturedModel; _aiError = null; }">
-                                        @ModelLabel(capturedModel)
+                                    <button @onclick="() => { _viewingRunKey = capturedKey; _aiError = null; }">
+                                        @capturedKey.TabLabel(ModelLabel(capturedKey.Model))
                                     </button>
                                     <button class="ai-refresh-btn" title="Refresh"
-                                            @onclick="() => RefreshModel(capturedModel)">↻</button>
+                                            @onclick="() => RefreshRun(capturedKey)">↻</button>
                                 </div>
                             }
                         </div>
@@ -266,12 +279,27 @@ else
     private bool _highlighting;
 
     // ── AI panel state ────────────────────────────────────────────────────
-    private bool    _aiPanelOpen  = false;
-    private string  _aiFeature    = "review";
-    private string  _selectedModel = "claude-sonnet-4-6";
-    private string? _viewingModel;
-    private bool    _aiRunning    = false;
-    private string? _aiError;
+    private bool      _aiPanelOpen    = false;
+    private string    _aiFeature      = "review";
+    private string    _selectedModel  = "claude-sonnet-4-6";
+    private bool      _aiToolsEnabled;
+    private int       _aiMaxTurns;
+    private AiRunKey? _viewingRunKey;
+    private bool      _aiRunning      = false;
+    private string?   _aiError;
+
+    private AiRunKey CurrentRunKey =>
+        new(_aiFeature, _selectedModel, _aiToolsEnabled, _aiMaxTurns);
+
+    private static readonly (string label, int val)[] MaxTurnsOptions =
+    [
+        ("1 turn",   1),
+        ("3 turns",  3),
+        ("5 turns",  5),
+        ("10 turns", 10),
+        ("20 turns", 20),
+        ("Unlimited", 0),
+    ];
 
     protected override void OnParametersSet()
     {
@@ -280,11 +308,13 @@ else
         hiddenFiles.Clear();
         _highlighted.Clear();
         _highlighting = diff is not null;
-        _aiPanelOpen  = false;
-        _aiFeature    = "review";
-        _viewingModel = null;
-        _aiError      = null;
-        _aiRunning    = false;
+        _aiPanelOpen    = false;
+        _aiFeature      = "review";
+        _aiToolsEnabled = Settings.AiToolsEnabled;
+        _aiMaxTurns     = Settings.AiMaxTurns;
+        _viewingRunKey  = null;
+        _aiError        = null;
+        _aiRunning      = false;
         if (diff is null) Nav.NavigateTo("/");
     }
 
@@ -348,14 +378,13 @@ else
         {
             _aiFeature   = feature;
             _aiPanelOpen = true;
-            // Pick best model tab to show initially
             if (diff is not null)
             {
                 var cached = AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch)
-                    .Where(kv => kv.Key.feature == feature)
+                    .Where(kv => kv.Key.Feature == feature)
                     .OrderByDescending(kv => kv.Value.CachedAt)
                     .FirstOrDefault();
-                _viewingModel = cached.Value is not null ? cached.Key.model : null;
+                _viewingRunKey = cached.Value is not null ? cached.Key : null;
             }
             _aiError = null;
         }
@@ -364,30 +393,30 @@ else
     private async Task RunAi()
     {
         if (diff is null || _aiRunning) return;
-        await RunAiInner(_aiFeature, _selectedModel, refresh: false);
+        await RunAiInner(CurrentRunKey);
     }
 
-    private async Task RefreshModel(string model)
+    private async Task RefreshRun(AiRunKey runKey)
     {
         if (diff is null || _aiRunning) return;
-        AiCache.Remove(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, _aiFeature, model);
-        await RunAiInner(_aiFeature, model, refresh: true);
+        AiCache.Remove(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, runKey);
+        await RunAiInner(runKey);
     }
 
-    private async Task RunAiInner(string feature, string model, bool refresh)
+    private async Task RunAiInner(AiRunKey runKey)
     {
-        _aiRunning    = true;
-        _aiError      = null;
-        _viewingModel = model;
+        _aiRunning     = true;
+        _aiError       = null;
+        _viewingRunKey = runKey;
         StateHasChanged();
 
         try
         {
-            var result = feature == "review"
-                ? await Claude.ReviewDiffAsync(diff!, model)
-                : await Claude.ExplainDiffAsync(diff!, model);
+            var result = runKey.Feature == "review"
+                ? await Claude.ReviewDiffAsync(diff!, runKey.Model, runKey.ToolsEnabled, runKey.MaxTurns)
+                : await Claude.ExplainDiffAsync(diff!, runKey.Model, runKey.ToolsEnabled, runKey.MaxTurns);
 
-            AiCache.Set(diff!.RepositoryPath, diff.BaseBranch, diff.CompareBranch, feature, model, result);
+            AiCache.Set(diff!.RepositoryPath, diff.BaseBranch, diff.CompareBranch, runKey, result);
         }
         catch (UnauthorizedAccessException ex)
         {

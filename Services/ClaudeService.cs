@@ -9,7 +9,7 @@ public class ClaudeService : IClaudeService
     public string[] AvailableModels { get; } =
     [
         "claude-sonnet-4-6",
-        "claude-opus-4-8",
+        "claude-opus-4-5",           // was claude-opus-4-8 (invalid)
         "claude-haiku-4-5-20251001",
     ];
 
@@ -17,14 +17,18 @@ public class ClaudeService : IClaudeService
 
     public ClaudeService(IClaudeAuthService auth) => _auth = auth;
 
-    public Task<string> ReviewDiffAsync(DiffResult diff, string model, CancellationToken ct = default)
-        => CallAsync(BuildReviewPrompt(diff), model, ct);
+    public Task<string> ReviewDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
+        => CallAsync(BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, ct);
 
-    public Task<string> ExplainDiffAsync(DiffResult diff, string model, CancellationToken ct = default)
-        => CallAsync(BuildExplainPrompt(diff), model, ct);
+    public Task<string> ExplainDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
+        => CallAsync(BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, ct);
 
-    private static async Task<string> CallAsync(string prompt, string model, CancellationToken ct)
+    private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, CancellationToken ct)
     {
+        // Guard: surface a clear error rather than an opaque subprocess failure
+        if (_auth.State != ClaudeAuthState.Authenticated)
+            throw new InvalidOperationException("Not connected to Claude. Check Settings.");
+
         // Pass the prompt via stdin to avoid Windows command-line length limits.
         // `claude -p` with no inline argument reads the prompt from stdin.
         var psi = new ProcessStartInfo(ClaudeAuthService.ClaudeExe)
@@ -41,7 +45,14 @@ public class ClaudeService : IClaudeService
         psi.ArgumentList.Add("-p");
         psi.ArgumentList.Add("--model");         psi.ArgumentList.Add(model);
         psi.ArgumentList.Add("--output-format"); psi.ArgumentList.Add("text");
-        psi.ArgumentList.Add("--allowedTools");  psi.ArgumentList.Add("none");
+        if (!toolsEnabled)
+        {
+            psi.ArgumentList.Add("--allowedTools"); psi.ArgumentList.Add("none");
+        }
+        if (maxTurns > 0)
+        {
+            psi.ArgumentList.Add("--max-turns"); psi.ArgumentList.Add(maxTurns.ToString());
+        }
 
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start claude process.");
@@ -104,9 +115,11 @@ public class ClaudeService : IClaudeService
     {
         const int maxChars = 60_000;
         var written = 0;
+        var truncated = false;
 
         foreach (var file in diff.Files)
         {
+            if (truncated) break;
             if (written >= maxChars) { sb.AppendLine("\n... (diff truncated due to length)"); break; }
             sb.AppendLine($"--- {file.DisplayPath}");
 
@@ -114,6 +127,7 @@ public class ClaudeService : IClaudeService
 
             foreach (var hunk in file.Hunks)
             {
+                if (truncated) break;
                 var ctx = hunk.Context.Length > 0 ? " " + hunk.Context : "";
                 sb.AppendLine($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@{ctx}");
 
@@ -126,13 +140,13 @@ public class ClaudeService : IClaudeService
                         _                     => " ",
                     };
                     sb.AppendLine($"{sign}{line.Content}");
-                    written += line.Content.Length + 2;
+                    written += line.Content.Length + 3; // sign(1) + content + \r\n(2)
                     if (written < maxChars) continue;
-                    sb.AppendLine("... (truncated)");
-                    goto nextFile;
+                    sb.AppendLine("\n... (diff truncated due to length)");
+                    truncated = true;
+                    break;
                 }
             }
-            nextFile:;
         }
     }
 }

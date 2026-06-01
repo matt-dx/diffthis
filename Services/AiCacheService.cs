@@ -1,7 +1,21 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using DiffThis.Models;
 
 namespace DiffThis.Services;
+
+/// Identifies a unique AI result: which diff, which feature, which run config.
+public record AiRunKey(string Feature, string Model, bool ToolsEnabled, int MaxTurns)
+{
+    /// Short label used on model tabs, e.g. "Sonnet 4.6 · tools · 5t"
+    public string TabLabel(string modelDisplayName)
+    {
+        var cfg = ToolsEnabled
+            ? MaxTurns > 0 ? $"tools · {MaxTurns}t" : "tools"
+            : MaxTurns > 0 ? $"{MaxTurns}t"          : null;
+        return cfg is null ? modelDisplayName : $"{modelDisplayName} · {cfg}";
+    }
+}
 
 public class AiCacheService
 {
@@ -9,65 +23,76 @@ public class AiCacheService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "DiffThis", "ai-cache.json");
 
-    private Dictionary<string, AiCacheEntry> _cache = [];
+    private const int MaxEntries  = 500;
+    private const int TrimTarget  = 400;
+
+    // ConcurrentDictionary is safe for concurrent Get/Set from multiple async AI completions
+    private ConcurrentDictionary<string, AiCacheEntry> _cache = new();
 
     public AiCacheService() => Load();
 
     // ── Public API ────────────────────────────────────────────────────────
 
-    public AiCacheEntry? Get(string repoPath, string baseRef, string compareRef,
-                             string feature, string model)
+    public AiCacheEntry? Get(string repoPath, string baseRef, string compareRef, AiRunKey key)
     {
-        _cache.TryGetValue(Key(repoPath, baseRef, compareRef, feature, model), out var e);
+        _cache.TryGetValue(CacheKey(repoPath, baseRef, compareRef, key), out var e);
         return e;
     }
 
-    public void Set(string repoPath, string baseRef, string compareRef,
-                    string feature, string model, string response)
+    public void Set(string repoPath, string baseRef, string compareRef, AiRunKey runKey, string response)
     {
-        _cache[Key(repoPath, baseRef, compareRef, feature, model)] =
-            new AiCacheEntry { Response = response, CachedAt = DateTime.UtcNow, Model = model };
+        _cache[CacheKey(repoPath, baseRef, compareRef, runKey)] = new AiCacheEntry
+        {
+            Response     = response,
+            CachedAt     = DateTime.UtcNow,
+            Model        = runKey.Model,
+            ToolsEnabled = runKey.ToolsEnabled,
+            MaxTurns     = runKey.MaxTurns,
+        };
         Save();
     }
 
-    public void Remove(string repoPath, string baseRef, string compareRef,
-                       string feature, string model)
+    public void Remove(string repoPath, string baseRef, string compareRef, AiRunKey runKey)
     {
-        if (_cache.Remove(Key(repoPath, baseRef, compareRef, feature, model)))
+        if (_cache.TryRemove(CacheKey(repoPath, baseRef, compareRef, runKey), out _))
             Save();
     }
 
-    /// Returns all cached entries for a given diff, keyed by (feature, model).
-    public Dictionary<(string feature, string model), AiCacheEntry> GetAll(
-        string repoPath, string baseRef, string compareRef)
+    /// All cached entries for a diff, keyed by AiRunKey.
+    public Dictionary<AiRunKey, AiCacheEntry> GetAll(string repoPath, string baseRef, string compareRef)
     {
         var prefix = $"{Esc(repoPath)}|{Esc(baseRef)}|{Esc(compareRef)}|";
         return _cache
             .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
             .ToDictionary(
-                kv => SplitFeatureModel(kv.Key),
+                kv => ParseRunKey(kv.Key),
                 kv => kv.Value);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // ── Key encoding ──────────────────────────────────────────────────────
+    // Format: {esc(repo)}|{esc(base)}|{esc(compare)}|{esc(feature)}|{esc(model)}|{T|N}{maxTurns}
 
-    private static string Key(string repo, string baseRef, string compare,
-                               string feature, string model)
-        => $"{Esc(repo)}|{Esc(baseRef)}|{Esc(compare)}|{feature}|{model}";
+    private static string CacheKey(string repo, string baseRef, string compare, AiRunKey k)
+        => $"{Esc(repo)}|{Esc(baseRef)}|{Esc(compare)}|{Esc(k.Feature)}|{Esc(k.Model)}|{(k.ToolsEnabled ? 'T' : 'N')}{k.MaxTurns}";
 
-    private static (string feature, string model) SplitFeatureModel(string key)
+    private static AiRunKey ParseRunKey(string key)
     {
-        // key = {repo}|{base}|{compare}|{feature}|{model}
-        // Split on the LAST two pipe-separated segments (first three may contain escaped pipes)
-        var idx = key.LastIndexOf('|');
-        if (idx < 0) return ("", key);
-        var model = key[(idx + 1)..];
-        var idx2  = key.LastIndexOf('|', idx - 1);
-        var feature = idx2 < 0 ? key[..idx] : key[(idx2 + 1)..idx];
-        return (feature, model);
+        // Work backwards: last segment = config, second-to-last = model,
+        // third-to-last = feature (first three segments are repo/base/compare)
+        var parts = key.Split('|');
+        if (parts.Length < 6) return new AiRunKey("", key, false, 0);
+
+        var cfg     = parts[^1];                      // e.g. "T5" or "N0"
+        var model   = parts[^2];
+        var feature = parts[^3];
+        var tools   = cfg.Length > 0 && cfg[0] == 'T';
+        var turns   = int.TryParse(cfg.Length > 1 ? cfg[1..] : "0", out var t) ? t : 0;
+        return new AiRunKey(feature, model, tools, turns);
     }
 
     private static string Esc(string s) => s.Replace("|", "%7C");
+
+    // ── Persistence ───────────────────────────────────────────────────────
 
     private void Load()
     {
@@ -75,17 +100,32 @@ public class AiCacheService
         {
             if (!File.Exists(CachePath)) return;
             var json = File.ReadAllText(CachePath);
-            _cache = JsonSerializer.Deserialize<Dictionary<string, AiCacheEntry>>(json) ?? [];
+            var dict = JsonSerializer.Deserialize<Dictionary<string, AiCacheEntry>>(json);
+            if (dict is not null)
+                _cache = new ConcurrentDictionary<string, AiCacheEntry>(dict);
         }
-        catch { _cache = []; }
+        catch { _cache = new(); }
     }
 
     private void Save()
     {
         try
         {
+            // Evict oldest entries if the cache has grown too large
+            if (_cache.Count > MaxEntries)
+            {
+                var toRemove = _cache
+                    .OrderBy(kv => kv.Value.CachedAt)
+                    .Take(_cache.Count - TrimTarget)
+                    .Select(kv => kv.Key)
+                    .ToList();
+                foreach (var k in toRemove)
+                    _cache.TryRemove(k, out _);
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!);
-            File.WriteAllText(CachePath, JsonSerializer.Serialize(_cache,
+            File.WriteAllText(CachePath, JsonSerializer.Serialize(
+                new Dictionary<string, AiCacheEntry>(_cache),
                 new JsonSerializerOptions { WriteIndented = false }));
         }
         catch { /* best effort */ }

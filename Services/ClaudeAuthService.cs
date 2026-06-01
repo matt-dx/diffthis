@@ -10,7 +10,9 @@ public class ClaudeAuthService : IClaudeAuthService
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".claude", ".credentials.json");
 
-    internal static readonly string ClaudeExe = ResolveExe();
+    // Lazy so Preferences.Get is deferred until after MAUI's platform init
+    private static readonly Lazy<string> _claudeExeLazy = new(ResolveExe);
+    internal static string ClaudeExe => _claudeExeLazy.Value;
 
     private const string ClaudeExePrefKey = "claude_exe_path";
 
@@ -78,14 +80,20 @@ public class ClaudeAuthService : IClaudeAuthService
                 SubscriptionType = oauth.TryGetProperty("subscriptionType", out var st)
                                    ? st.GetString() ?? "" : "",
             };
+            // Note: credentials may have an expired access token. That's fine — we invoke
+            // the claude CLI as a subprocess for all AI calls, which handles OAuth refresh
+            // internally. We only need to know the credentials file exists.
             State = ClaudeAuthState.Authenticated;
 
-            // Best-effort: read email from auth status cache if available
+            // Best-effort: read email from auth status asynchronously
             _ = TryReadEmailAsync();
         }
         catch { State = ClaudeAuthState.NotFound; }
     }
 
+    // Note: RefreshAsync simply reloads from disk. Actual OAuth token refresh is handled
+    // transparently by the claude CLI subprocess; DiffThis never calls the Anthropic API
+    // directly, so there is no bearer token to refresh on our side.
     public Task<bool> RefreshAsync()
     {
         Reload();
@@ -94,6 +102,8 @@ public class ClaudeAuthService : IClaudeAuthService
 
     private async Task TryReadEmailAsync()
     {
+        using var cts  = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Process?  proc = null;
         try
         {
             var psi = new ProcessStartInfo(ClaudeExe)
@@ -109,16 +119,23 @@ public class ClaudeAuthService : IClaudeAuthService
             psi.ArgumentList.Add("--output-format");
             psi.ArgumentList.Add("json");
 
-            using var proc = Process.Start(psi);
+            proc = Process.Start(psi);
             if (proc is null) return;
-            var stdout = await proc.StandardOutput.ReadToEndAsync();
-            await proc.WaitForExitAsync();
+
+            var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
+            await proc.WaitForExitAsync(cts.Token);
             if (proc.ExitCode != 0) return;
 
             using var doc = JsonDocument.Parse(stdout);
             if (doc.RootElement.TryGetProperty("email", out var e))
                 Email = e.GetString();
         }
-        catch { /* best effort */ }
+        catch { /* best effort — timeout, process error, or JSON parse failure */ }
+        finally
+        {
+            // Kill the process if it's still running after timeout
+            try { if (proc is { HasExited: false }) proc.Kill(); } catch { }
+            proc?.Dispose();
+        }
     }
 }

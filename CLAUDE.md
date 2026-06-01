@@ -37,11 +37,16 @@ DiffThis is a Windows desktop app built on **.NET MAUI + Blazor Hybrid**. The MA
 
 > **Note:** `SyntaxHighlighter.GetLanguage` and `HighlightLines` currently write a debug log to `~/Desktop/hl-debug.txt`. This is a temporary debugging aid.
 
+**AI integration** (`Services/ClaudeService.cs`): DiffThis never calls the Anthropic API directly. Instead it invokes the `claude` CLI as a subprocess, passing the diff as stdin and using `--output-format stream-json`. `ClaudeAuthService` reads credentials from `~/.claude/.credentials.json` (written by the Claude CLI after `claude auth login`) and resolves the `claude` executable from well-known paths and `PATH`. Auth state is surfaced in the UI; actual OAuth token refresh is handled transparently by the CLI subprocess. Results are cached per `(repoPath, baseRef, compareRef, feature, model, toolsEnabled, maxTurns)` by `AiCacheService`, which persists to `%LOCALAPPDATA%\DiffThis\ai-cache.json` (max 500 entries, LRU-evicted to 400). The cache key type `AiRunKey` identifies a run configuration; multiple cached results for the same diff are shown as tabs in the UI.
+
 **Services** (all singletons, registered in `MauiProgram.cs`):
 
 - `IGitService` / `GitService` — git subprocess wrapper + unified diff parser
-- `ISettingsService` / `SettingsService` — persists theme, font-ligatures toggle, recent-repo list, and per-repo branch selection state via MAUI `Preferences` API
+- `ISettingsService` / `SettingsService` — persists theme, font-ligatures toggle, recent-repo list, per-repo branch selection state, and AI model/config preferences via MAUI `Preferences` API
 - `IExportService` / `ExportService` — generates Markdown from a `DiffResult` and writes it to a file
+- `IClaudeService` / `ClaudeService` — invokes `claude` CLI subprocess for diff review and explanation; streams JSON output
+- `IClaudeAuthService` / `ClaudeAuthService` — reads `~/.claude/.credentials.json`; resolves claude executable path; exposes auth state and email
+- `AiCacheService` — persists AI responses keyed by diff + run config; no interface (injected directly)
 - `DiffSessionService` — cross-page state (no interface; injected directly)
 - `SyntaxHighlighter` — static class, no registration needed
 

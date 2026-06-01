@@ -463,6 +463,12 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .ai-action-bar-right { display: flex; align-items: center; gap: 8px; }
 .ai-model-label      { font-size: 12px; color: var(--fg-muted); }
 .ai-spinner          { font-size: 12px; color: var(--fg-secondary); font-style: italic; }
+.ai-tools-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--fg-secondary); cursor: pointer; user-select: none;
+  padding: 0 2px;
+}
+.ai-tools-label input { cursor: pointer; accent-color: var(--primary); }
 .ai-auth-notice      { font-size: 13px; color: var(--fg-secondary); justify-content: center; }
 .btn-active          { border-color: var(--primary); color: var(--primary); background: var(--bg); }
 
