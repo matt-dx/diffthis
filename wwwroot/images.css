@@ -37,6 +37,38 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94'/%3E%3Cpath d='M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19'/%3E%3Cpath d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3C/svg%3E");
 }
 
+/* ── Analysis ref icons ──────────────────────────────────────────────── */
+
+/* Bug — beetle/bug silhouette */
+.icon-ref-bug {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3Cpath d='M12 9V5'/%3E%3Cpath d='M5 13H2'/%3E%3Cpath d='M22 13h-3'/%3E%3Cpath d='M6.5 6.5l-2-2'/%3E%3Cpath d='M17.5 6.5l2-2'/%3E%3Cpath d='M6.5 19.5l-2 2'/%3E%3Cpath d='M17.5 19.5l2 2'/%3E%3Cellipse cx='12' cy='13' rx='4' ry='6'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3Cpath d='M12 9V5'/%3E%3Cpath d='M5 13H2'/%3E%3Cpath d='M22 13h-3'/%3E%3Cpath d='M6.5 6.5l-2-2'/%3E%3Cpath d='M17.5 6.5l2-2'/%3E%3Cpath d='M6.5 19.5l-2 2'/%3E%3Cpath d='M17.5 19.5l2 2'/%3E%3Cellipse cx='12' cy='13' rx='4' ry='6'/%3E%3C/svg%3E");
+}
+
+/* Logic error — chess knight */
+.icon-ref-knight {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M7 21h10v-1a4 4 0 0 0-2.19-3.56C16.31 15.39 18 13.3 18 11c0-2.42-1.35-4.5-3.37-5.58L13 5V3h-2v2.28A7 7 0 0 0 5 11v1l-2 3h4v1a3 3 0 0 0 3 3h4a2 2 0 0 1 2 2H7z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M7 21h10v-1a4 4 0 0 0-2.19-3.56C16.31 15.39 18 13.3 18 11c0-2.42-1.35-4.5-3.37-5.58L13 5V3h-2v2.28A7 7 0 0 0 5 11v1l-2 3h4v1a3 3 0 0 0 3 3h4a2 2 0 0 1 2 2H7z'/%3E%3C/svg%3E");
+}
+
+/* Security — cracked shield */
+.icon-ref-shield-cracked {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M10 10l2 2 2-2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M10 10l2 2 2-2'/%3E%3C/svg%3E");
+}
+
+/* Other — speech bubble */
+.icon-ref-bubble {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+}
+
+/* Multiple refs — stacked layers */
+.icon-ref-multi {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 2 7 12 12 22 7 12 2'/%3E%3Cpolyline points='2 12 12 17 22 12'/%3E%3Cpolyline points='2 17 12 22 22 17'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 2 7 12 12 22 7 12 2'/%3E%3Cpolyline points='2 12 12 17 22 12'/%3E%3Cpolyline points='2 17 12 22 22 17'/%3E%3C/svg%3E");
+}
+
 /* ── Claude star ─────────────────────────────────────────────────────── */
 /* 12-point star representing the Claude / Anthropic brand icon */
 .icon-claude {

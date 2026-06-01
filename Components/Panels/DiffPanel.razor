@@ -1,9 +1,12 @@
 @inject ISettingsService Settings
+@inject IAnalysisLinkService LinkService
+@inject IClaudeModelService ModelService
 @inject IJSRuntime JS
+@implements IDisposable
 
 @if (Diff is not null)
 {
-    <div class="diff-layout">
+    <div class="diff-layout" @onclick="CloseContextMenu">
 
         <!-- File sidebar -->
         <aside class="file-sidebar">
@@ -35,7 +38,7 @@
         </aside>
 
         <!-- Diff content -->
-        <div class="diff-content">
+        <div class="diff-content" style="position:relative">
             @if (Diff.Files.Count == 0)
             {
                 <div class="diff-empty">
@@ -46,9 +49,10 @@
                     <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(Diff.RepositoryPath)">← Change branches</a>
                 </div>
             }
-            @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
+            @foreach (var (file, fi) in Diff.Files.Select((f, i) => (f, i)))
             {
-                <div class="diff-file @(_hiddenFiles.Contains(i) ? "diff-file-hidden" : "")" id="file-@i">
+                var fileRefs = Settings.AnalysisLinksEnabled ? LinkService.GetFileRefs(fi) : (IReadOnlyList<AnalysisRef>)[];
+                <div class="diff-file @(_hiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
                     <div class="file-header">
                         <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
                         <span class="file-path">
@@ -58,6 +62,20 @@
                             <span class="add">+@file.Additions</span>
                             <span class="del">-@file.Deletions</span>
                         </span>
+                        @if (fileRefs.Count > 0)
+                        {
+                            <!-- Show one icon per unique Category across all visible refs for this file -->
+                            <div class="file-header-refs">
+                                @foreach (var r in fileRefs.GroupBy(r => r.Category).Select(g => g.First()))
+                                {
+                                    var capturedR = r;
+                                    <span class="@RefIconClass(r.Category) ref-icon file-ref-icon"
+                                          title="@ModelService.GetDisplayName(r.RunKey.Model)"
+                                          @onclick="e => OpenContextMenu(fileRefs.ToList(), e)"
+                                          @onclick:stopPropagation></span>
+                                }
+                            </div>
+                        }
                     </div>
 
                     @if (file.IsBinary)
@@ -70,7 +88,7 @@
                     }
                     else
                     {
-                        var hlLines = _highlighted.TryGetValue(i, out var hl) ? hl : null;
+                        var hlLines = _highlighted.TryGetValue(fi, out var hl) ? hl : null;
                         var lineIdx = 0;
                         foreach (var hunk in file.Hunks)
                         {
@@ -86,7 +104,29 @@
                                     @foreach (var line in hunk.Lines)
                                     {
                                         var capturedIdx = lineIdx;
-                                        <tr class="@LineCss(line.Type)">
+                                        var lineRefs    = (Settings.AnalysisLinksEnabled && line.NewLineNumber.HasValue)
+                                            ? LinkService.GetLineRefs(fi, line.NewLineNumber.Value)
+                                            : (IReadOnlyList<AnalysisRef>)[];
+                                        var rowId = line.NewLineNumber.HasValue
+                                            ? $"diff-{fi}-{line.NewLineNumber.Value}"
+                                            : null;
+                                        <tr class="@LineCss(line.Type)" id="@rowId">
+                                            <td class="ref-col" @onclick:stopPropagation>
+                                                @if (lineRefs.Count == 1)
+                                                {
+                                                    var r = lineRefs[0];
+                                                    <span class="@RefIconClass(r.Category) ref-icon"
+                                                          title="@ModelService.GetDisplayName(r.RunKey.Model)"
+                                                          @onclick="() => NavigateToRef(r)"></span>
+                                                }
+                                                else if (lineRefs.Count > 1)
+                                                {
+                                                    var capturedRefs = lineRefs.ToList();
+                                                    <span class="icon icon-ref-multi ref-icon"
+                                                          title="@lineRefs.Count analysis references"
+                                                          @onclick="e => OpenContextMenu(capturedRefs, e)"></span>
+                                                }
+                                            </td>
                                             <td class="ln">@line.OldLineNumber</td>
                                             <td class="ln">@line.NewLineNumber</td>
                                             <td class="sign">@LineSign(line.Type)</td>
@@ -109,6 +149,22 @@
                     }
                 </div>
             }
+
+            <!-- Context menu for multiple refs on one line -->
+            @if (_menuRefs is not null)
+            {
+                <div class="ref-context-menu" style="position:fixed;top:@(_menuY)px;left:@(_menuX)px"
+                     @onclick:stopPropagation>
+                    @foreach (var r in _menuRefs)
+                    {
+                        var capturedR = r;
+                        <div class="ref-context-item" @onclick="() => { NavigateToRef(capturedR); CloseContextMenu(); }">
+                            <span class="@RefIconClass(r.Category) ref-icon"></span>
+                            <span>@ModelService.GetDisplayName(r.RunKey.Model)</span>
+                        </div>
+                    }
+                </div>
+            }
         </div>
 
     </div>
@@ -116,34 +172,89 @@
 
 @code {
     [Parameter] public DiffResult? Diff { get; set; }
+    [Parameter] public (int fileIndex, int? lineFrom, int? lineTo)? PendingFocus { get; set; }
+    [Parameter] public EventCallback PendingFocusConsumed { get; set; }
 
     private int _selectedIndex = -1;
     private HashSet<int> _hiddenFiles = [];
     private Dictionary<int, List<string>> _highlighted = [];
     private bool _highlighting;
     private DiffResult? _lastDiff;
+    private (int fileIndex, int? lineFrom, int? lineTo)? _lastFocus;
+
+    // Context menu state
+    private List<AnalysisRef>? _menuRefs;
+    private double _menuX, _menuY;
+
+    protected override void OnInitialized() =>
+        LinkService.Changed += OnLinksChanged;
 
     protected override void OnParametersSet()
     {
-        if (_lastDiff == Diff) return;
-        _lastDiff = Diff;
-        _selectedIndex = -1;
-        _hiddenFiles.Clear();
-        _highlighted.Clear();
-        _highlighting = Diff is not null;
+        if (_lastDiff != Diff)
+        {
+            _lastDiff = Diff;
+            _selectedIndex = -1;
+            _hiddenFiles.Clear();
+            _highlighted.Clear();
+            _highlighting = Diff is not null;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_highlighting) return;
-        _highlighting = false;
-        try
+        // Handle syntax highlighting trigger
+        if (_highlighting)
         {
-            await Task.Run(ComputeHighlighting);
+            _highlighting = false;
+            try { await Task.Run(ComputeHighlighting); }
+            catch { /* partial results are fine */ }
+            await InvokeAsync(StateHasChanged);
         }
-        catch { /* partial results are fine */ }
-        await InvokeAsync(StateHasChanged);
+
+        // Handle pending focus from AnalysisPanel link click
+        if (PendingFocus.HasValue && PendingFocus != _lastFocus)
+        {
+            _lastFocus = PendingFocus;
+            var (fileIdx, lineFrom, _) = PendingFocus.Value;
+            string targetId;
+            if (lineFrom.HasValue && fileIdx >= 0)
+                targetId = $"diff-{fileIdx}-{lineFrom.Value}";
+            else if (fileIdx >= 0)
+                targetId = $"file-{fileIdx}";
+            else
+                targetId = null!;
+
+            if (targetId is not null)
+            {
+                _hiddenFiles.Remove(fileIdx);
+                _selectedIndex = fileIdx;
+                // Fall back to the file header if the specific line isn't in the diff hunk
+                await JS.InvokeVoidAsync("scrollToElement", targetId, $"file-{fileIdx}");
+            }
+            await PendingFocusConsumed.InvokeAsync();
+        }
     }
+
+    private void OnLinksChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => LinkService.Changed -= OnLinksChanged;
+
+    private void NavigateToRef(AnalysisRef r)
+    {
+        if (Diff is null) return;
+        LinkService.RequestFocus(
+            r.LineFrom.HasValue ? $"{r.FilePath}:{r.LineFrom}" : r.FilePath,
+            Diff);
+    }
+
+    private void OpenContextMenu(List<AnalysisRef> refs, MouseEventArgs e)
+    {
+        _menuRefs = refs;
+        _menuX    = e.ClientX;
+        _menuY    = e.ClientY;
+    }
+
+    private void CloseContextMenu() => _menuRefs = null;
 
     private void ComputeHighlighting()
     {
@@ -179,6 +290,14 @@
         if (!_hiddenFiles.Remove(index))
             _hiddenFiles.Add(index);
     }
+
+    private static string RefIconClass(RefCategory c) => c switch
+    {
+        RefCategory.Bug        => "icon icon-ref-bug",
+        RefCategory.LogicError => "icon icon-ref-knight",
+        RefCategory.Security   => "icon icon-ref-shield-cracked",
+        _                      => "icon icon-ref-bubble",
+    };
 
     private static string LineCss(DiffLineType t) => t switch
     {

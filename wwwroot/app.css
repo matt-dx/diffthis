@@ -549,6 +549,52 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .ai-content pre code { border: none; padding: 0; background: transparent; }
 .ai-content strong { font-weight: 600; }
 
+/* ── Diff line ref indicators ────────────────────────────────────────── */
+.ref-col {
+  width: 18px; min-width: 18px; padding: 0 3px;
+  text-align: center; vertical-align: top;
+  border-right: 1px solid var(--border);
+}
+.ref-icon {
+  width: 11px; height: 11px; cursor: pointer;
+  opacity: 0.55; margin-top: 2px;
+}
+.ref-icon:hover { opacity: 1; }
+
+/* Category colours */
+.icon-ref-bug            { color: var(--del-fg); }
+.icon-ref-knight         { color: var(--primary); }
+.icon-ref-shield-cracked { color: #e07b39; }
+.icon-ref-bubble         { color: var(--fg-secondary); }
+.icon-ref-multi          { color: var(--primary); opacity: 0.8; }
+
+/* Clickable file refs in analysis markdown (span, not a, to avoid MAUI router intercept) */
+.analysis-ref {
+  cursor: pointer; text-decoration: underline dotted;
+  text-underline-offset: 2px; color: var(--primary);
+}
+.analysis-ref:hover { text-decoration: underline solid; }
+
+/* Context menu */
+.ref-context-menu {
+  position: absolute; z-index: 200;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25); min-width: 200px;
+}
+.ref-context-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--fg);
+}
+.ref-context-item:hover { background: var(--bg-secondary); }
+.ref-context-item .ref-icon { opacity: 1; flex-shrink: 0; }
+
+.file-header-refs {
+  display: flex; align-items: center; gap: 4px; margin-left: 6px; flex-shrink: 0;
+}
+.file-ref-icon { width: 12px; height: 12px; opacity: 0.7; }
+.file-ref-icon:hover { opacity: 1; }
+
 /* ── Analysis result cards ───────────────────────────────────────────── */
 .claude-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -631,6 +677,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .panel-tab-content {
   flex: 1; overflow: hidden; display: flex; flex-direction: column;
 }
+.panel-hidden { display: none; }
 .panels-side-by-side {
   flex: 1; display: grid; grid-template-columns: 1fr 1fr;
   overflow: hidden;

@@ -12,7 +12,8 @@ public class SettingsService : ISettingsService
     private const string BranchStatesKey   = "branch_states";
     private const string AiToolsKey           = "ai_tools_enabled";
     private const string AiMaxTurnsKey        = "ai_max_turns";
-    private const string MainViewSideBySideKey = "main_view_side_by_side";
+    private const string MainViewSideBySideKey   = "main_view_side_by_side";
+    private const string AnalysisLinksKey        = "analysis_links_enabled";
 
     public event Action? ThemeChanged;
 
@@ -90,6 +91,12 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(MainViewSideBySideKey, false);
         set => Preferences.Set(MainViewSideBySideKey, value);
+    }
+
+    public bool AnalysisLinksEnabled
+    {
+        get => Preferences.Get(AnalysisLinksKey, false);
+        set => Preferences.Set(AnalysisLinksKey, value);
     }
 
     public void SaveBranchState(string repoPath, BranchSelectionState state)

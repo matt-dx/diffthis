@@ -20,5 +20,8 @@ public interface ISettingsService
     // ── MainView layout ────────────────────────────────────────────────────
     bool MainViewSideBySide { get; set; }  // default: false (tabbed)
 
+    // ── Unsupported / experimental features ───────────────────────────────
+    bool AnalysisLinksEnabled { get; set; }  // default: false
+
     event Action? ThemeChanged;
 }

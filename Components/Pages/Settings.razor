@@ -199,6 +199,22 @@
     }
 
     <section class="settings-section">
+        <p class="section-title">Unsupported Features</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Analysis cross-links</p>
+                    <p class="setting-desc">Show clickable file references in analysis results, and display comment indicators in the diff panel at referenced lines. This feature is experimental and may not work correctly.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="analysisLinksEnabled" @bind:after="SaveAnalysisLinks" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <p class="section-title">About</p>
         <div class="setting-card">
             <div class="setting-row">
@@ -223,16 +239,18 @@
     private bool fontLigatures;
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
+    private bool analysisLinksEnabled;
     private bool _showClearCacheConfirm;
     private bool _modelsExpanded;
 
     protected override void OnInitialized()
     {
         _returnUrl     = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
-        maxRecent      = Svc.MaxRecentRepositories;
-        fontLigatures  = Svc.FontLigatures;
-        aiToolsEnabled = Svc.AiToolsEnabled;
-        aiMaxTurns     = Svc.AiMaxTurns;
+        maxRecent             = Svc.MaxRecentRepositories;
+        fontLigatures         = Svc.FontLigatures;
+        aiToolsEnabled        = Svc.AiToolsEnabled;
+        aiMaxTurns            = Svc.AiMaxTurns;
+        analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
         ModelService.ModelsChanged += OnModelsChanged;
     }
 
@@ -254,8 +272,9 @@
     private void SaveFontLigatures() =>
         Svc.FontLigatures = fontLigatures;
 
-    private void SaveAiTools()    => Svc.AiToolsEnabled = aiToolsEnabled;
-    private void SaveAiMaxTurns() => Svc.AiMaxTurns     = aiMaxTurns;
+    private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
+    private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
+    private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;
 
     private void ClearRepoHistory()
     {

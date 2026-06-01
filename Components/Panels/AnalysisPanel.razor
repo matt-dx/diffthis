@@ -2,10 +2,12 @@
 @inject IClaudeService Claude
 @inject IClaudeModelService ModelService
 @inject AiCacheService AiCache
+@inject IAnalysisLinkService LinkService
 @inject ISettingsService Settings
 @inject IJSRuntime JS
 @using Markdig
-@implements IDisposable
+@using System.Text.RegularExpressions
+@implements IAsyncDisposable
 
 @{
     var diff       = Diff;
@@ -13,7 +15,7 @@
         ? AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch)
         : new Dictionary<AiRunKey, AiCacheEntry>();
 
-    // Sidebar item lists (cached ∪ in-flight so running items stay visible)
+    // Sidebar item lists (cached ∪ in-flight so running items stay visible during refresh)
     var explainItems = allEntries
         .Where(kv => kv.Key.Feature == "explain").Select(kv => kv.Key)
         .Union(_runningKeys.Where(k => k.Feature == "explain"))
@@ -64,9 +66,9 @@ else
             @foreach (var (runKey, sideIdx) in explainItems.Select((k, i) => (k, i)))
             {
                 var k         = runKey;
-                var dispIdx   = sideIdx; // explain items are first in displayItems
+                var dispIdx   = sideIdx;
                 var isRunning = _runningKeys.Contains(k);
-                var isHidden  = _hiddenKeys.Contains(k);
+                var isHidden  = !LinkService.IsVisible(k);
                 var isActive  = _selectedFeature == "explain" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("explain", k, dispIdx)'>
@@ -81,6 +83,8 @@ else
                     </button>
                     <button class="eye-btn" title="Refresh" disabled="@isRunning"
                             @onclick:stopPropagation @onclick="() => RefreshEntry(k)">↻</button>
+                    <button class="eye-btn" title="Delete" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => _pendingDeleteKey = k">✕</button>
                 </div>
             }
             @if (availableExplain.Count > 0)
@@ -104,9 +108,9 @@ else
             @foreach (var (runKey, sideIdx) in reviewItems.Select((k, i) => (k, i)))
             {
                 var k         = runKey;
-                var dispIdx   = explainItems.Count + sideIdx; // review items follow explain in displayItems
+                var dispIdx   = explainItems.Count + sideIdx;
                 var isRunning = _runningKeys.Contains(k);
-                var isHidden  = _hiddenKeys.Contains(k);
+                var isHidden  = !LinkService.IsVisible(k);
                 var isActive  = _selectedFeature == "review" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("review", k, dispIdx)'>
@@ -121,6 +125,8 @@ else
                     </button>
                     <button class="eye-btn" title="Refresh" disabled="@isRunning"
                             @onclick:stopPropagation @onclick="() => RefreshEntry(k)">↻</button>
+                    <button class="eye-btn" title="Delete" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => _pendingDeleteKey = k">✕</button>
                 </div>
             }
             @if (availableReview.Count > 0)
@@ -142,7 +148,7 @@ else
 
         </aside>
 
-        <!-- Stacked result cards (all visible results at once) -->
+        <!-- Stacked result cards -->
         <div class="diff-content">
             @if (displayItems.Count == 0)
             {
@@ -153,10 +159,10 @@ else
             }
             @for (var i = 0; i < displayItems.Count; i++)
             {
-                var (feat, k)   = displayItems[i];
-                var cardIdx     = i;
-                var isRunning   = _runningKeys.Contains(k);
-                var isHidden    = _hiddenKeys.Contains(k);
+                var (feat, k)    = displayItems[i];
+                var cardIdx      = i;
+                var isRunning    = _runningKeys.Contains(k);
+                var isHidden     = !LinkService.IsVisible(k);
                 var featureLabel = feat == "explain" ? "Context" : "Code Review";
                 allEntries.TryGetValue(k, out var entry);
                 _errors.TryGetValue(k, out var cardError);
@@ -174,6 +180,8 @@ else
                         </button>
                         <button class="eye-btn" title="Refresh" disabled="@isRunning"
                                 @onclick="() => RefreshEntry(k)">↻</button>
+                        <button class="eye-btn" title="Delete" disabled="@isRunning"
+                                @onclick="() => _pendingDeleteKey = k">✕</button>
                     </div>
 
                     @if (cardError is not null)
@@ -204,6 +212,25 @@ else
         </div>
 
     </div>
+
+    <!-- Delete confirmation modal -->
+    @if (_pendingDeleteKey is not null)
+    {
+        <div class="modal-backdrop" @onclick="() => _pendingDeleteKey = null">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Delete result?</p>
+                <p class="modal-body">
+                    The <strong>@ModelService.GetDisplayName(_pendingDeleteKey.Model)</strong>
+                    (@(_pendingDeleteKey.Feature == "review" ? "Code Review" : "Context"))
+                    cached result will be permanently deleted.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _pendingDeleteKey = null">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="DeleteEntry">Delete</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -212,30 +239,55 @@ else
     private string?                               _selectedFeature;
     private AiRunKey?                             _selectedKey;
     private readonly HashSet<AiRunKey>            _runningKeys = [];
-    private readonly HashSet<AiRunKey>            _hiddenKeys  = [];
     private readonly Dictionary<AiRunKey, string> _errors      = [];
-    private string    _explainAddModel = "";
-    private string    _reviewAddModel  = "";
+    private string    _explainAddModel  = "";
+    private string    _reviewAddModel   = "";
+    private AiRunKey? _pendingDeleteKey;
     private DiffResult? _lastDiff;
 
-    protected override void OnInitialized() =>
+    private DotNetObjectReference<AnalysisPanel>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
         ModelService.ModelsChanged += OnModelsChanged;
+        LinkService.Changed        += OnLinksChanged;
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
 
     protected override void OnParametersSet()
     {
         if (_lastDiff == Diff) return;
         _lastDiff = Diff;
-        _selectedFeature = null;
-        _selectedKey     = null;
+        _selectedFeature  = null;
+        _selectedKey      = null;
         _runningKeys.Clear();
-        _hiddenKeys.Clear();
         _errors.Clear();
-        _explainAddModel = "";
-        _reviewAddModel  = "";
+        _explainAddModel  = "";
+        _reviewAddModel   = "";
+        _pendingDeleteKey = null;
+
+        LinkService.Reset();
+        if (Diff is not null)
+            LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _dotNetRef is not null)
+            await JS.InvokeVoidAsync("setAnalysisRefDotNet", _dotNetRef);
     }
 
     private void OnModelsChanged() => InvokeAsync(StateHasChanged);
-    public void Dispose() => ModelService.ModelsChanged -= OnModelsChanged;
+    private void OnLinksChanged()  => InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        ModelService.ModelsChanged -= OnModelsChanged;
+        LinkService.Changed        -= OnLinksChanged;
+        try { await JS.InvokeVoidAsync("clearAnalysisRefDotNet"); }
+        catch { /* JS context may already be gone during shutdown */ }
+        _dotNetRef?.Dispose();
+    }
 
     private async Task SelectAndScroll(string feature, AiRunKey key, int displayIdx)
     {
@@ -244,10 +296,8 @@ else
         await JS.InvokeVoidAsync("scrollToElement", $"analysis-{displayIdx}");
     }
 
-    private void ToggleHidden(AiRunKey key)
-    {
-        if (!_hiddenKeys.Remove(key)) _hiddenKeys.Add(key);
-    }
+    private void ToggleHidden(AiRunKey key) =>
+        LinkService.SetVisible(key, !LinkService.IsVisible(key));
 
     private void AddEntry(string feature, string modelId)
     {
@@ -263,6 +313,15 @@ else
     {
         if (Diff is null || _runningKeys.Contains(key)) return;
         _ = RunAsync(key, refresh: true);
+    }
+
+    private void DeleteEntry()
+    {
+        if (_pendingDeleteKey is null || Diff is null) return;
+        AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, _pendingDeleteKey);
+        if (_selectedKey == _pendingDeleteKey) { _selectedFeature = null; _selectedKey = null; }
+        LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+        _pendingDeleteKey = null;
     }
 
     private async Task RunAsync(AiRunKey key, bool refresh)
@@ -293,14 +352,46 @@ else
         finally
         {
             _runningKeys.Remove(key);
+            if (Diff is not null)
+                LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private static string RenderMarkdown(string markdown)
+    // Post-processes Markdig HTML: wraps file-ref <code> spans in a clickable <span>.
+    // Uses <span> (not <a href>) to avoid MAUI's NavigationManager intercepting the click.
+    // Matches any <code> tag (with or without attributes) whose text content contains a
+    // recognisable source-file reference.
+    private static readonly Regex CodeSpanRegex = new(
+        @"<code(?:\s[^>]*)?>([^<]+)</code>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private string RenderMarkdown(string markdown)
     {
         var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-        return Markdown.ToHtml(markdown, pipeline);
+        var html     = Markdown.ToHtml(markdown, pipeline);
+
+        if (!Settings.AnalysisLinksEnabled) return html;
+
+        html = CodeSpanRegex.Replace(html, m =>
+        {
+            var tag   = m.Value[..m.Value.IndexOf('>')];   // everything up to first >
+            var inner = m.Groups[1].Value;
+            var refMatch = AnalysisLinkService.ExtractRefRegex().Match(inner);
+            if (!refMatch.Success) return m.Value;
+            var rawRef = System.Web.HttpUtility.HtmlAttributeEncode(refMatch.Value);
+            var closeTag = m.Value.EndsWith("</code>", StringComparison.Ordinal) ? "</code>" : m.Value[m.Value.LastIndexOf('<')..];
+            return $"{tag}><span class=\"analysis-ref\" data-ref=\"{rawRef}\">{inner}</span>{closeTag}";
+        });
+
+        return html;
+    }
+
+    [JSInvokable]
+    public void OnRefClicked(string rawRef)
+    {
+        if (Diff is not null)
+            LinkService.RequestFocus(rawRef, Diff);
     }
 
     private static string EyeClass(bool hidden) => hidden ? "icon icon-eye-off" : "icon icon-eye";

@@ -1,0 +1,14 @@
+using DiffThis.Services;
+
+namespace DiffThis.Models;
+
+public enum RefCategory { Bug, LogicError, Security, Other }
+
+/// A single file/line reference extracted from an AI analysis response.
+public record AnalysisRef(
+    AiRunKey    RunKey,
+    string      FilePath,   // raw text from the model (may be partial path)
+    int?        LineFrom,
+    int?        LineTo,
+    RefCategory Category
+);

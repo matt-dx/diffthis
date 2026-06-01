@@ -3,8 +3,10 @@
 @inject IExportService Export
 @inject ISettingsService Settings
 @inject AiCacheService AiCache
+@inject IAnalysisLinkService LinkService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@implements IDisposable
 
 @if (_diff is null)
 {
@@ -45,7 +47,9 @@ else
             <div class="panels-side-by-side">
                 <div class="panel-column">
                     <div class="panel-heading">Diff</div>
-                    <DiffPanel Diff="_diff" />
+                    <DiffPanel Diff="_diff"
+                               PendingFocus="_pendingFocus"
+                               PendingFocusConsumed="OnFocusConsumed" />
                 </div>
                 <div class="panel-column panel-column-border">
                     <div class="panel-heading">Analysis</div>
@@ -55,7 +59,8 @@ else
         }
         else
         {
-            <!-- Tabbed layout -->
+            <!-- Tabbed layout — both components stay mounted; only one is visible.
+                 This preserves local state (hidden files, selected items) across tab switches. -->
             <div class="panel-tabs-bar">
                 <button class="panel-tab @(_activeTab == 0 ? "panel-tab-active" : "")"
                         @onclick='() => _activeTab = 0'>Diff</button>
@@ -63,14 +68,14 @@ else
                         @onclick='() => _activeTab = 1'>Analysis</button>
             </div>
             <div class="panel-tab-content">
-                @if (_activeTab == 0)
-                {
-                    <DiffPanel Diff="_diff" />
-                }
-                else
-                {
+                <div class="@(_activeTab == 0 ? "" : "panel-hidden")">
+                    <DiffPanel Diff="_diff"
+                               PendingFocus="_pendingFocus"
+                               PendingFocusConsumed="OnFocusConsumed" />
+                </div>
+                <div class="@(_activeTab == 1 ? "" : "panel-hidden")">
                     <AnalysisPanel Diff="_diff" />
-                }
+                </div>
             </div>
         }
 
@@ -81,6 +86,12 @@ else
     private DiffResult? _diff;
     private bool _sideBySide;
     private int  _activeTab = 0;
+    private (int fileIndex, int? lineFrom, int? lineTo)? _pendingFocus;
+
+    protected override void OnInitialized()
+    {
+        LinkService.FocusRequested += OnFocusRequested;
+    }
 
     protected override void OnParametersSet()
     {
@@ -88,6 +99,27 @@ else
         _sideBySide = Settings.MainViewSideBySide;
         if (_diff is null) Nav.NavigateTo("/");
     }
+
+    private async void OnFocusRequested(int fileIndex, int? lineFrom, int? lineTo)
+    {
+        // In tabbed mode, switch to the Diff tab before setting the pending focus
+        if (!_sideBySide && _activeTab != 0)
+        {
+            _activeTab = 0;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(60); // allow Blazor to render DiffPanel into the DOM
+        }
+        _pendingFocus = (fileIndex, lineFrom, lineTo);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnFocusConsumed()
+    {
+        _pendingFocus = null;
+        // No StateHasChanged needed — DiffPanel already handled it
+    }
+
+    public void Dispose() => LinkService.FocusRequested -= OnFocusRequested;
 
     private void ToggleLayout()
     {
