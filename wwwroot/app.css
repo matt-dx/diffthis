@@ -549,6 +549,66 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .ai-content pre code { border: none; padding: 0; background: transparent; }
 .ai-content strong { font-weight: 600; }
 
+/* ── Analysis result cards ───────────────────────────────────────────── */
+.claude-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0; color: #e07b39;
+}
+.claude-badge svg { width: 16px; height: 16px; }
+
+.analysis-feature-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; flex-shrink: 0; line-height: 1.4;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--fg-secondary);
+}
+
+.analysis-loading-inline {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--fg-muted); font-size: 12px;
+}
+
+.analysis-hunk-error { color: var(--del-fg); }
+
+/* ── Analysis panel sidebar ──────────────────────────────────────────── */
+.analysis-section-heading { border-top: 1px solid var(--border); padding-top: 10px; }
+
+.analysis-add-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px 8px;
+}
+.analysis-add-select { flex: 1; min-width: 0; }
+.analysis-add-btn {
+  flex-shrink: 0; padding: 3px 9px; font-size: 15px; line-height: 1;
+}
+
+/* Pulsing dot shown on running sidebar items */
+.ai-busy-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--primary);
+  animation: ai-pulse 1.1s ease-in-out infinite;
+}
+@keyframes ai-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.75); }
+  50%       { opacity: 1;   transform: scale(1);    }
+}
+
+/* Loading state in detail panel */
+.analysis-loading {
+  display: flex; align-items: center; gap: 10px;
+  padding: 24px; color: var(--fg-secondary); font-size: 13px;
+}
+.analysis-spinner {
+  display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: ai-spin 0.75s linear infinite;
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+
+/* eye-btn always visible for disabled (running) state */
+.eye-btn:disabled { opacity: 0.35 !important; cursor: not-allowed; }
+
 /* ── MainView layout ─────────────────────────────────────────────────── */
 .main-view {
   display: flex; flex-direction: column; height: 100vh; overflow: hidden;
