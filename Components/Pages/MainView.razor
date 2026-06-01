@@ -100,15 +100,14 @@ else
         if (_diff is null) Nav.NavigateTo("/");
     }
 
-    private async void OnFocusRequested(int fileIndex, int? lineFrom, int? lineTo)
+    // Event delegate is Action<> so the subscription must be void; async work lives in the Task overload.
+    private void OnFocusRequested(int fileIndex, int? lineFrom, int? lineTo)
+        => _ = OnFocusRequestedAsync(fileIndex, lineFrom, lineTo);
+
+    private async Task OnFocusRequestedAsync(int fileIndex, int? lineFrom, int? lineTo)
     {
-        // In tabbed mode, switch to the Diff tab before setting the pending focus
         if (!_sideBySide && _activeTab != 0)
-        {
             _activeTab = 0;
-            await InvokeAsync(StateHasChanged);
-            await Task.Delay(60); // allow Blazor to render DiffPanel into the DOM
-        }
         _pendingFocus = (fileIndex, lineFrom, lineTo);
         await InvokeAsync(StateHasChanged);
     }
