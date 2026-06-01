@@ -1,0 +1,45 @@
+/*
+ * images.css — all icon/image definitions for DiffThis
+ *
+ * Icons are implemented as CSS masks so they inherit currentColor via
+ * background-color. Apply a sizing/colour class alongside the icon class.
+ *
+ * Usage:
+ *   <span class="icon icon-eye"></span>
+ *   <span class="icon icon-eye-off"></span>
+ *   <span class="icon icon-claude"></span>
+ */
+
+/* ── Base icon ───────────────────────────────────────────────────────── */
+.icon {
+  display: inline-block;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+/* ── Eye (visible) ───────────────────────────────────────────────────── */
+/* viewBox 0 0 24 24 — Feather eye icon */
+.icon-eye {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+}
+
+/* ── Eye-off (hidden) ────────────────────────────────────────────────── */
+/* viewBox 0 0 24 24 — Feather eye-off icon */
+.icon-eye-off {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94'/%3E%3Cpath d='M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19'/%3E%3Cpath d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94'/%3E%3Cpath d='M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19'/%3E%3Cpath d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3C/svg%3E");
+}
+
+/* ── Claude star ─────────────────────────────────────────────────────── */
+/* 12-point star representing the Claude / Anthropic brand icon */
+.icon-claude {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M12 1.5 L13.8 7.2 L19.8 5.7 L16.2 10.8 L21.5 13.5 L15.9 14.4 L16.5 20.5 L12 16.8 L7.5 20.5 L8.1 14.4 L2.5 13.5 L7.8 10.8 L4.2 5.7 L10.2 7.2 Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M12 1.5 L13.8 7.2 L19.8 5.7 L16.2 10.8 L21.5 13.5 L15.9 14.4 L16.5 20.5 L12 16.8 L7.5 20.5 L8.1 14.4 L2.5 13.5 L7.8 10.8 L4.2 5.7 L10.2 7.2 Z'/%3E%3C/svg%3E");
+}

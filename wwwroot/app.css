@@ -295,7 +295,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 }
 .file-item:hover .eye-btn { opacity: 0.6; }
 .file-item:hover .eye-btn:hover { opacity: 1; background: var(--border); }
-.eye-btn svg { width: 13px; height: 13px; }
+.eye-btn .icon { width: 13px; height: 13px; }
 
 /* ── Status badges ───────────────────────────────────────────────────── */
 .status-badge {
@@ -554,7 +554,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; flex-shrink: 0; color: #e07b39;
 }
-.claude-badge svg { width: 16px; height: 16px; }
+.claude-badge .icon { width: 16px; height: 16px; }
 
 .analysis-feature-badge {
   display: inline-block; padding: 1px 7px; border-radius: 3px;
