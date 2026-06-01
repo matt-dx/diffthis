@@ -353,7 +353,7 @@ else
 
     private async Task RunAsync(AiRunKey key, bool refresh)
     {
-        if (Diff is null) return;
+        if (Diff is null) { _runningKeys.Remove(key); return; }
         if (refresh)
             AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key);
         _errors.Remove(key);
