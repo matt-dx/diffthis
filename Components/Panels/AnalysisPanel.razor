@@ -64,7 +64,7 @@ else
             <div class="sidebar-toggle">
                 <button class="sidebar-toggle-btn" title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
                         @onclick:stopPropagation @onclick="() => SidebarCollapsedChanged.InvokeAsync(!SidebarCollapsed)">
-                    @(SidebarCollapsed ? "›" : "‹")
+                    <span class="icon @(SidebarCollapsed ? "icon-chevron-bar-right" : "icon-chevron-bar-left")" style="width:16px;height:16px"></span>
                 </button>
             </div>
 
