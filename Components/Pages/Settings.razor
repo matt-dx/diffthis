@@ -64,7 +64,7 @@
     </section>
 
     <section class="settings-section">
-        <p class="section-title">Claude AI</p>
+        <p class="section-title"><span class="icon icon-claude" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>Claude AI</p>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
@@ -152,7 +152,7 @@
                     @foreach (var model in ModelService.Models)
                     {
                         var capturedId = model.Id;
-                        <div class="model-list-item">
+                        <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
                             <div class="model-list-meta">
                                 <code class="model-list-id">@model.Id</code>
                             </div>
@@ -166,6 +166,11 @@
                                     <button class="model-reset-btn" title="Reset to default name"
                                             @onclick="() => ModelService.ResetDisplayName(capturedId)">↺</button>
                                 }
+                                <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                        title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                        @onclick="() => ModelService.ToggleHidden(capturedId)">
+                                    <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                </button>
                             </div>
                         </div>
                     }

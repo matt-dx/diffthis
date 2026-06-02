@@ -19,7 +19,8 @@ public partial class ClaudeModelService : IClaudeModelService
 
     private List<ClaudeModel> _models = [];
 
-    public IReadOnlyList<ClaudeModel> Models       => _models;
+    public IReadOnlyList<ClaudeModel> Models        => _models;
+    public IReadOnlyList<ClaudeModel> VisibleModels => _models.Where(m => !m.IsHidden).ToList();
     public DateTime?                  LastFetchedAt { get; private set; }
     public bool                       IsLoading    { get; private set; }
 
@@ -74,6 +75,7 @@ public partial class ClaudeModelService : IClaudeModelService
                     Id           = id,
                     DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : InferName(id),
                     IsCustomName = existing?.IsCustomName ?? false,
+                    IsHidden     = existing?.IsHidden     ?? false,
                 });
             }
 
@@ -106,6 +108,15 @@ public partial class ClaudeModelService : IClaudeModelService
         if (m is null) return;
         m.DisplayName  = InferName(modelId);
         m.IsCustomName = false;
+        Save();
+        ModelsChanged?.Invoke();
+    }
+
+    public void ToggleHidden(string modelId)
+    {
+        var m = _models.FirstOrDefault(x => x.Id == modelId);
+        if (m is null) return;
+        m.IsHidden = !m.IsHidden;
         Save();
         ModelsChanged?.Invoke();
     }

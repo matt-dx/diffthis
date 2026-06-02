@@ -4,7 +4,8 @@ namespace DiffThis.Services;
 
 public interface IClaudeModelService
 {
-    IReadOnlyList<ClaudeModel> Models       { get; }
+    IReadOnlyList<ClaudeModel> Models        { get; }
+    IReadOnlyList<ClaudeModel> VisibleModels { get; }
     DateTime?                  LastFetchedAt { get; }
     bool                       IsLoading    { get; }
 
@@ -19,6 +20,9 @@ public interface IClaudeModelService
 
     /// Revert to the algorithmically inferred display name.
     void ResetDisplayName(string modelId);
+
+    /// Toggle whether a model appears in the model-selection dropdowns.
+    void ToggleHidden(string modelId);
 
     /// Returns the display name for a model ID (custom or inferred).
     string GetDisplayName(string modelId);

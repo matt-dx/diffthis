@@ -35,8 +35,8 @@
     // Add-dropdown: exclude models already present (cached or in-flight)
     var takenExplain     = explainItems.Select(k => k.Model).ToHashSet();
     var takenReview      = reviewItems.Select(k => k.Model).ToHashSet();
-    var availableExplain = ModelService.Models.Where(m => !takenExplain.Contains(m.Id)).ToList();
-    var availableReview  = ModelService.Models.Where(m => !takenReview.Contains(m.Id)).ToList();
+    var availableExplain = ModelService.VisibleModels.Where(m => !takenExplain.Contains(m.Id)).ToList();
+    var availableReview  = ModelService.VisibleModels.Where(m => !takenReview.Contains(m.Id)).ToList();
 
     var explainAdd = availableExplain.Any(m => m.Id == _explainAddModel)
         ? _explainAddModel : availableExplain.FirstOrDefault()?.Id ?? "";
