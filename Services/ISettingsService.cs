@@ -13,5 +13,15 @@ public interface ISettingsService
     BranchSelectionState? GetBranchState(string repoPath);
     void SaveBranchState(string repoPath, BranchSelectionState state);
 
+    // ── Claude AI defaults ─────────────────────────────────────────────────
+    bool AiToolsEnabled { get; set; }  // default: false
+    int  AiMaxTurns     { get; set; }  // default: 5 (0 = unlimited)
+
+    // ── MainView layout ────────────────────────────────────────────────────
+    bool MainViewSideBySide { get; set; }  // default: false (tabbed)
+
+    // ── Unsupported / experimental features ───────────────────────────────
+    bool AnalysisLinksEnabled { get; set; }  // default: false
+
     event Action? ThemeChanged;
 }

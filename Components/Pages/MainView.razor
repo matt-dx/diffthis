@@ -1,0 +1,156 @@
+@page "/diff"
+@inject DiffSessionService Session
+@inject IExportService Export
+@inject ISettingsService Settings
+@inject AiCacheService AiCache
+@inject IAnalysisLinkService LinkService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (_diff is null)
+{
+    <div class="page"><p>No diff loaded. <a href="/">Go home</a></p></div>
+}
+else
+{
+    <div class="main-view @(Settings.FontLigatures ? "ligatures" : "")">
+
+        <!-- Toolbar -->
+        <div class="diff-toolbar">
+            <div class="toolbar-title">
+                <span class="tname">@_diff.RepositoryName</span>
+                <span class="sep">:</span>
+                <code>@_diff.BaseDisplay</code>
+                <span class="arrow">→</span>
+                <code>@_diff.CompareDisplay</code>
+            </div>
+            <div class="toolbar-summary">
+                <span>@_diff.Files.Count files</span>
+                <span class="add">+@_diff.TotalAdditions</span>
+                <span class="del">-@_diff.TotalDeletions</span>
+            </div>
+            <div class="toolbar-actions">
+                <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)">← Branches</a>
+                <a class="btn btn-sm" href="/">← Repositories</a>
+                <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
+                <a class="btn btn-sm" href="/settings?from=/diff">Settings</a>
+            </div>
+        </div>
+
+        @if (_sideBySide)
+        {
+            <!-- Side-by-side layout -->
+            <div class="panels-side-by-side">
+                <div class="panel-column">
+                    <div class="panel-heading">Diff</div>
+                    <DiffPanel Diff="_diff"
+                               PendingFocus="_pendingFocus"
+                               PendingFocusConsumed="OnFocusConsumed" />
+                </div>
+                <div class="panel-column panel-column-border">
+                    <div class="panel-heading">
+                        Analysis
+                        <button class="layout-toggle-btn" title="Switch to tabs" @onclick="ToggleLayout">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <line x1="3" y1="9" x2="21" y2="9"/>
+                                <line x1="9" y1="9" x2="9" y2="21"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <AnalysisPanel Diff="_diff" />
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Tabbed layout — both components stay mounted; only one is visible.
+                 This preserves local state (hidden files, selected items) across tab switches. -->
+            <div class="panel-tabs-bar">
+                <button class="panel-tab @(_activeTab == 0 ? "panel-tab-active" : "")"
+                        @onclick='() => _activeTab = 0'>Diff</button>
+                <button class="panel-tab @(_activeTab == 1 ? "panel-tab-active" : "")"
+                        @onclick='() => _activeTab = 1'>Analysis</button>
+                <button class="layout-toggle-btn layout-toggle-btn-tabs" title="Switch to side by side" @onclick="ToggleLayout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="12" y1="3" x2="12" y2="21"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="panel-tab-content">
+                <div class="@(_activeTab == 0 ? "" : "panel-hidden")">
+                    <DiffPanel Diff="_diff"
+                               PendingFocus="_pendingFocus"
+                               PendingFocusConsumed="OnFocusConsumed" />
+                </div>
+                <div class="@(_activeTab == 1 ? "" : "panel-hidden")">
+                    <AnalysisPanel Diff="_diff" />
+                </div>
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    private DiffResult? _diff;
+    private bool _sideBySide;
+    private int  _activeTab = 0;
+    private (int fileIndex, int? lineFrom, int? lineTo)? _pendingFocus;
+
+    protected override void OnInitialized()
+    {
+        LinkService.FocusRequested += OnFocusRequested;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _diff       = Session.CurrentDiff;
+        _sideBySide = Settings.MainViewSideBySide;
+        if (_diff is null) Nav.NavigateTo("/");
+    }
+
+    // Event delegate is Action<> so the subscription must be void; async work lives in the Task overload.
+    private void OnFocusRequested(int fileIndex, int? lineFrom, int? lineTo)
+        => _ = OnFocusRequestedAsync(fileIndex, lineFrom, lineTo);
+
+    private async Task OnFocusRequestedAsync(int fileIndex, int? lineFrom, int? lineTo)
+    {
+        if (!_sideBySide && _activeTab != 0)
+            _activeTab = 0;
+        _pendingFocus = (fileIndex, lineFrom, lineTo);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnFocusConsumed()
+    {
+        _pendingFocus = null;
+        // No StateHasChanged needed — DiffPanel already handled it
+    }
+
+    public void Dispose() => LinkService.FocusRequested -= OnFocusRequested;
+
+    private void ToggleLayout()
+    {
+        _sideBySide = !_sideBySide;
+        Settings.MainViewSideBySide = _sideBySide;
+    }
+
+    private async Task ExportMarkdown()
+    {
+        if (_diff is null) return;
+        var aiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
+        var path = ExportPath("md");
+        await Export.ExportMarkdownAsync(_diff, aiResults, path);
+        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}");
+    }
+
+    private string ExportPath(string ext)
+    {
+        var name = $"diff_{_diff!.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
+            .Replace('/', '-').Replace('\\', '-');
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), name);
+    }
+}

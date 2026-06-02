@@ -1,0 +1,429 @@
+@inject IClaudeAuthService ClaudeAuth
+@inject IClaudeService Claude
+@inject IClaudeModelService ModelService
+@inject AiCacheService AiCache
+@inject IAnalysisLinkService LinkService
+@inject ISettingsService Settings
+@inject IJSRuntime JS
+@using Markdig
+@using System.Text.RegularExpressions
+@implements IAsyncDisposable
+
+@{
+    var diff       = Diff;
+    var allEntries = diff is not null
+        ? AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch)
+        : new Dictionary<AiRunKey, AiCacheEntry>();
+
+    // Sidebar item lists (cached ∪ in-flight so running items stay visible during refresh)
+    var explainItems = allEntries
+        .Where(kv => kv.Key.Feature == "explain").Select(kv => kv.Key)
+        .Union(_runningKeys.Where(k => k.Feature == "explain"))
+        .OrderBy(k => allEntries.TryGetValue(k, out var e0) ? e0.CachedAt : DateTime.MaxValue)
+        .ToList();
+    var reviewItems = allEntries
+        .Where(kv => kv.Key.Feature == "review").Select(kv => kv.Key)
+        .Union(_runningKeys.Where(k => k.Feature == "review"))
+        .OrderBy(k => allEntries.TryGetValue(k, out var e1) ? e1.CachedAt : DateTime.MaxValue)
+        .ToList();
+
+    // Combined ordered display list: explain first, then review
+    var displayItems = explainItems.Select(k => (feature: "explain", key: k))
+        .Concat(reviewItems.Select(k => (feature: "review", key: k)))
+        .ToList();
+
+    // Add-dropdown: exclude models already present (cached or in-flight)
+    var takenExplain     = explainItems.Select(k => k.Model).ToHashSet();
+    var takenReview      = reviewItems.Select(k => k.Model).ToHashSet();
+    var availableExplain = ModelService.VisibleModels.Where(m => !takenExplain.Contains(m.Id)).ToList();
+    var availableReview  = ModelService.VisibleModels.Where(m => !takenReview.Contains(m.Id)).ToList();
+
+    var explainAdd = availableExplain.Any(m => m.Id == _explainAddModel)
+        ? _explainAddModel : availableExplain.FirstOrDefault()?.Id ?? "";
+    var reviewAdd = availableReview.Any(m => m.Id == _reviewAddModel)
+        ? _reviewAddModel : availableReview.FirstOrDefault()?.Id ?? "";
+}
+
+@if (ClaudeAuth.State != ClaudeAuthState.Authenticated)
+{
+    <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
+        <p>Sign in to Claude to use AI features.</p>
+        <p>Run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
+    </div>
+}
+else if (diff is null)
+{
+    <div class="analysis-panel analysis-panel-empty">No diff loaded.</div>
+}
+else
+{
+    <div class="diff-layout @(Settings.FontLigatures ? "ligatures" : "")">
+
+        <!-- Sidebar -->
+        <aside class="file-sidebar">
+
+            <div class="sidebar-heading">Context</div>
+            @foreach (var (runKey, sideIdx) in explainItems.Select((k, i) => (k, i)))
+            {
+                var k         = runKey;
+                var dispIdx   = sideIdx;
+                var isRunning = _runningKeys.Contains(k);
+                var isHidden  = !LinkService.IsVisible(k);
+                var isActive  = _selectedFeature == "explain" && _selectedKey == k;
+                <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
+                     @onclick='() => SelectAndScroll("explain", k, dispIdx)'>
+                    <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                    <div class="file-info">
+                        <span class="file-name">@ModelService.GetDisplayName(k.Model)</span>
+                    </div>
+                    @if (isRunning) { <span class="ai-busy-dot"></span> }
+                    <button class="eye-btn" title="@(isHidden ? "Show" : "Hide")"
+                            @onclick:stopPropagation @onclick="() => ToggleHidden(k)">
+                        <span class="@EyeClass(isHidden)"></span>
+                    </button>
+                    <button class="eye-btn" title="Refresh" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => RefreshEntry(k)">↻</button>
+                    <button class="eye-btn" title="Delete" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => _pendingDeleteKey = k">✕</button>
+                </div>
+            }
+            @if (availableExplain.Count > 0)
+            {
+                <div class="analysis-add-row">
+                    <select class="select-sm analysis-add-select"
+                            value="@explainAdd"
+                            @onchange='e => _explainAddModel = e.Value?.ToString() ?? explainAdd'>
+                        @foreach (var m in availableExplain)
+                        {
+                            <option value="@m.Id">@m.DisplayName</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm analysis-add-btn"
+                            disabled="@string.IsNullOrEmpty(explainAdd)"
+                            @onclick='() => AddEntry("explain", explainAdd)'>+</button>
+                </div>
+            }
+
+            <div class="sidebar-heading analysis-section-heading">Code Review</div>
+            @foreach (var (runKey, sideIdx) in reviewItems.Select((k, i) => (k, i)))
+            {
+                var k         = runKey;
+                var dispIdx   = explainItems.Count + sideIdx;
+                var isRunning = _runningKeys.Contains(k);
+                var isHidden  = !LinkService.IsVisible(k);
+                var isActive  = _selectedFeature == "review" && _selectedKey == k;
+                <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
+                     @onclick='() => SelectAndScroll("review", k, dispIdx)'>
+                    <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                    <div class="file-info">
+                        <span class="file-name">@ModelService.GetDisplayName(k.Model)</span>
+                    </div>
+                    @if (isRunning) { <span class="ai-busy-dot"></span> }
+                    <button class="eye-btn" title="@(isHidden ? "Show" : "Hide")"
+                            @onclick:stopPropagation @onclick="() => ToggleHidden(k)">
+                        <span class="@EyeClass(isHidden)"></span>
+                    </button>
+                    <button class="eye-btn" title="Refresh" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => RefreshEntry(k)">↻</button>
+                    <button class="eye-btn" title="Delete" disabled="@isRunning"
+                            @onclick:stopPropagation @onclick="() => _pendingDeleteKey = k">✕</button>
+                </div>
+            }
+            @if (availableReview.Count > 0)
+            {
+                <div class="analysis-add-row">
+                    <select class="select-sm analysis-add-select"
+                            value="@reviewAdd"
+                            @onchange='e => _reviewAddModel = e.Value?.ToString() ?? reviewAdd'>
+                        @foreach (var m in availableReview)
+                        {
+                            <option value="@m.Id">@m.DisplayName</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm analysis-add-btn"
+                            disabled="@string.IsNullOrEmpty(reviewAdd)"
+                            @onclick='() => AddEntry("review", reviewAdd)'>+</button>
+                </div>
+            }
+
+        </aside>
+
+        <!-- Stacked result cards -->
+        <div class="diff-content">
+            @if (displayItems.Count == 0)
+            {
+                <div class="diff-empty">
+                    <p class="diff-empty-title">No results yet</p>
+                    <p class="diff-empty-sub">Use the <strong>+</strong> button in the sidebar to generate a result.</p>
+                </div>
+            }
+            @for (var i = 0; i < displayItems.Count; i++)
+            {
+                var (feat, k)    = displayItems[i];
+                var cardIdx      = i;
+                var isRunning    = _runningKeys.Contains(k);
+                var isHidden     = !LinkService.IsVisible(k);
+                var featureLabel = feat == "explain" ? "Context" : "Code Review";
+                allEntries.TryGetValue(k, out var entry);
+                _errors.TryGetValue(k, out var cardError);
+
+                <div class="diff-file @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
+                    <div class="file-header">
+                        <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                        <span class="file-path">
+                            <strong>@ModelService.GetDisplayName(k.Model)</strong>
+                        </span>
+                        <span class="analysis-feature-badge">@featureLabel</span>
+                        @if (entry is not null)
+                        {
+                            var capturedEntry = entry;
+                            var capturedKey   = k;
+                            <button class="eye-btn ml-auto" title="Copy to clipboard"
+                                    @onclick="() => CopyEntry(capturedKey, capturedEntry)">
+                                @if (_copiedKey == k)
+                                {
+                                    <span style="font-size:11px;color:var(--add-fg)">✓</span>
+                                }
+                                else
+                                {
+                                    <span class="icon icon-clipboard"></span>
+                                }
+                            </button>
+                        }
+                        <button class="eye-btn @(entry is null ? "ml-auto" : "")" title="@(isHidden ? "Show" : "Hide")"
+                                @onclick="() => ToggleHidden(k)">
+                            <span class="@EyeClass(isHidden)"></span>
+                        </button>
+                        <button class="eye-btn" title="Refresh" disabled="@isRunning"
+                                @onclick="() => RefreshEntry(k)">↻</button>
+                        <button class="eye-btn" title="Delete" disabled="@isRunning"
+                                @onclick="() => _pendingDeleteKey = k">✕</button>
+                    </div>
+
+                    @if (cardError is not null)
+                    {
+                        <div class="hunk-header analysis-hunk-error">Error</div>
+                        <div class="ai-error" style="padding:12px 16px">@cardError</div>
+                    }
+                    else if (isRunning)
+                    {
+                        <div class="hunk-header">
+                            <span class="analysis-loading-inline">
+                                <span class="analysis-spinner"></span>
+                                Generating…
+                            </span>
+                        </div>
+                    }
+                    else if (entry is not null)
+                    {
+                        <div class="hunk-header">
+                            Cached @entry.CachedAt.ToLocalTime().ToString("MMM d · h:mm tt")
+                        </div>
+                        <div class="ai-content">
+                            @((MarkupString)RenderMarkdown(entry.Response))
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+    </div>
+
+    <!-- Delete confirmation modal -->
+    @if (_pendingDeleteKey is not null)
+    {
+        <div class="modal-backdrop" @onclick="() => _pendingDeleteKey = null">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Delete result?</p>
+                <p class="modal-body">
+                    The <strong>@ModelService.GetDisplayName(_pendingDeleteKey.Model)</strong>
+                    (@(_pendingDeleteKey.Feature == "review" ? "Code Review" : "Context"))
+                    cached result will be permanently deleted.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _pendingDeleteKey = null">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="DeleteEntry">Delete</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public DiffResult? Diff { get; set; }
+
+    private string?                               _selectedFeature;
+    private AiRunKey?                             _selectedKey;
+    private readonly HashSet<AiRunKey>            _runningKeys = [];
+    private readonly Dictionary<AiRunKey, string> _errors      = [];
+    private string    _explainAddModel  = "";
+    private string    _reviewAddModel   = "";
+    private AiRunKey? _pendingDeleteKey;
+    private AiRunKey? _copiedKey;
+    private DiffResult? _lastDiff;
+
+    private DotNetObjectReference<AnalysisPanel>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
+        ModelService.ModelsChanged += OnModelsChanged;
+        LinkService.Changed        += OnLinksChanged;
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_lastDiff == Diff) return;
+        _lastDiff = Diff;
+        _selectedFeature  = null;
+        _selectedKey      = null;
+        _runningKeys.Clear();
+        _errors.Clear();
+        _explainAddModel  = "";
+        _reviewAddModel   = "";
+        _pendingDeleteKey = null;
+
+        LinkService.Reset();
+        if (Diff is not null)
+            LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _dotNetRef is not null)
+            await JS.InvokeVoidAsync("setAnalysisRefDotNet", _dotNetRef);
+    }
+
+    private void OnModelsChanged() => InvokeAsync(StateHasChanged);
+    private void OnLinksChanged()  => InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        ModelService.ModelsChanged -= OnModelsChanged;
+        LinkService.Changed        -= OnLinksChanged;
+        try { await JS.InvokeVoidAsync("clearAnalysisRefDotNet"); }
+        catch { /* JS context may already be gone during shutdown */ }
+        _dotNetRef?.Dispose();
+    }
+
+    private async Task SelectAndScroll(string feature, AiRunKey key, int displayIdx)
+    {
+        _selectedFeature = feature;
+        _selectedKey     = key;
+        await JS.InvokeVoidAsync("scrollToElement", $"analysis-{displayIdx}");
+    }
+
+    private void ToggleHidden(AiRunKey key) =>
+        LinkService.SetVisible(key, !LinkService.IsVisible(key));
+
+    private void AddEntry(string feature, string modelId)
+    {
+        if (string.IsNullOrEmpty(modelId) || Diff is null) return;
+        var key = new AiRunKey(feature, modelId, Settings.AiToolsEnabled, Settings.AiMaxTurns);
+        if (!_runningKeys.Add(key)) return;
+        _selectedFeature = feature;
+        _selectedKey     = key;
+        _ = RunAsync(key, refresh: false);
+    }
+
+    private void RefreshEntry(AiRunKey key)
+    {
+        if (Diff is null || !_runningKeys.Add(key)) return;
+        _ = RunAsync(key, refresh: true);
+    }
+
+    private async Task CopyEntry(AiRunKey key, AiCacheEntry entry)
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", entry.Response);
+        _copiedKey = key;
+        StateHasChanged();
+        await Task.Delay(1500);
+        if (_copiedKey == key) _copiedKey = null;
+        StateHasChanged();
+    }
+
+    private void DeleteEntry()
+    {
+        if (_pendingDeleteKey is null || Diff is null) return;
+        AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, _pendingDeleteKey);
+        if (_selectedKey == _pendingDeleteKey) { _selectedFeature = null; _selectedKey = null; }
+        LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+        _pendingDeleteKey = null;
+    }
+
+    private async Task RunAsync(AiRunKey key, bool refresh)
+    {
+        if (Diff is null) { _runningKeys.Remove(key); return; }
+        if (refresh)
+            AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key);
+        _errors.Remove(key);
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = key.Feature == "review"
+                ? await Claude.ReviewDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns)
+                : await Claude.ExplainDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns);
+            AiCache.Set(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key, result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _errors[key] = ex.Message;
+            ClaudeAuth.Reload();
+        }
+        catch (Exception ex)
+        {
+            _errors[key] = $"Request failed: {ex.Message}";
+        }
+        finally
+        {
+            _runningKeys.Remove(key);
+            if (Diff is not null)
+                LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // Post-processes Markdig HTML: wraps file-ref <code> spans in a clickable <span>.
+    // Uses <span> (not <a href>) to avoid MAUI's NavigationManager intercepting the click.
+    // Matches any <code> tag (with or without attributes) whose text content contains a
+    // recognisable source-file reference.
+    // Groups: 1=opening tag, 2=text content (no nested markup in Markdig inline code), 3=closing tag
+    private static readonly Regex CodeSpanRegex = new(
+        @"(<code(?:\s[^>]*)?>)([^<]+)(</code>)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .DisableHtml()
+        .Build();
+
+    private string RenderMarkdown(string markdown)
+    {
+        var html = Markdown.ToHtml(markdown, MarkdownPipeline);
+
+        if (!Settings.AnalysisLinksEnabled) return html;
+
+        html = CodeSpanRegex.Replace(html, m =>
+        {
+            var openTag  = m.Groups[1].Value;
+            var inner    = m.Groups[2].Value;
+            var closeTag = m.Groups[3].Value;
+            var refMatch = AnalysisLinkService.ExtractRefRegex().Match(inner);
+            if (!refMatch.Success) return m.Value;
+            var rawRef = System.Web.HttpUtility.HtmlAttributeEncode(refMatch.Value);
+            return $"{openTag}<span class=\"analysis-ref\" data-ref=\"{rawRef}\">{inner}</span>{closeTag}";
+        });
+
+        return html;
+    }
+
+    [JSInvokable]
+    public void OnRefClicked(string rawRef)
+    {
+        if (Diff is not null)
+            LinkService.RequestFocus(rawRef, Diff);
+    }
+
+    private static string EyeClass(bool hidden) => hidden ? "icon icon-eye-off" : "icon icon-eye";
+}

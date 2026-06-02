@@ -68,8 +68,44 @@ public class ExportService : IExportService
         return sb.ToString();
     }
 
+    public string GenerateMarkdown(DiffResult diff, IReadOnlyDictionary<AiRunKey, AiCacheEntry> aiResults)
+    {
+        var sb = new StringBuilder(GenerateMarkdown(diff));
+
+        if (aiResults.Count == 0) return sb.ToString();
+
+        sb.AppendLine();
+        sb.AppendLine("## Analysis");
+        sb.AppendLine();
+
+        foreach (var (runKey, entry) in aiResults.OrderBy(kv => kv.Value.CachedAt))
+        {
+            var modelLabel = runKey.Model switch
+            {
+                "claude-opus-4-8"           => "Opus 4.8",
+                "claude-sonnet-4-6"         => "Sonnet 4.6",
+                "claude-haiku-4-5-20251001" => "Haiku 4.5",
+                _                           => runKey.Model,
+            };
+            var featureLabel = runKey.Feature == "review" ? "Code Review" : "Explain Changes";
+            sb.AppendLine($"### {featureLabel} — {runKey.TabLabel(modelLabel)}");
+            sb.AppendLine();
+            sb.AppendLine($"_Cached {entry.CachedAt.ToLocalTime():yyyy-MM-dd HH:mm}_");
+            sb.AppendLine();
+            sb.AppendLine(entry.Response.TrimEnd());
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
     public async Task ExportMarkdownAsync(DiffResult diff, string filePath)
     {
         await File.WriteAllTextAsync(filePath, GenerateMarkdown(diff), Encoding.UTF8);
+    }
+
+    public async Task ExportMarkdownAsync(DiffResult diff, IReadOnlyDictionary<AiRunKey, AiCacheEntry> aiResults, string filePath)
+    {
+        await File.WriteAllTextAsync(filePath, GenerateMarkdown(diff, aiResults), Encoding.UTF8);
     }
 }

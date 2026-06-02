@@ -1,5 +1,9 @@
 @page "/settings"
 @inject ISettingsService Svc
+@inject IClaudeAuthService ClaudeAuth
+@inject IClaudeModelService ModelService
+@inject AiCacheService AiCache
+@implements IDisposable
 
 <div class="page narrow">
     <a class="back-link" href="@_returnUrl">← Back</a>
@@ -48,6 +52,171 @@
                 </select>
             </div>
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Clear history</p>
+                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title"><span class="icon icon-claude" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>Claude AI</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (ClaudeAuth.State == ClaudeAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(ClaudeAuth.Email))
+                            {
+                                <span> · @ClaudeAuth.Email</span>
+                            }
+                            @if (!string.IsNullOrEmpty(ClaudeAuth.SubscriptionType))
+                            {
+                                <span class="auth-plan">(@ClaudeAuth.SubscriptionType)</span>
+                            }
+                        </p>
+                        <p class="setting-desc">To sign out, run <code>claude auth logout</code> in your terminal.</p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — install Claude Code and run <code>claude auth login</code>, then click Reload below.
+                        </p>
+                    }
+                </div>
+                <button class="btn btn-sm" @onclick="ReloadAuth">Reload</button>
+            </div>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Tool use</p>
+                    <p class="setting-desc">Allow Claude to read files and run commands when reviewing. Produces richer results but uses more turns.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="aiToolsEnabled" @bind:after="SaveAiTools" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <div class="setting-row" style="margin-top:12px">
+                <div>
+                    <p class="setting-label">Max turns</p>
+                    <p class="setting-desc">Maximum agentic turns per request. Higher values allow deeper analysis; 0 means unlimited.</p>
+                </div>
+                <select class="select-sm" @bind="aiMaxTurns" @bind:after="SaveAiMaxTurns">
+                    <option value="1">1 turn</option>
+                    <option value="3">3 turns</option>
+                    <option value="5">5 turns</option>
+                    <option value="10">10 turns</option>
+                    <option value="20">20 turns</option>
+                    <option value="0">Unlimited</option>
+                </select>
+            </div>
+            <p class="setting-desc" style="font-style:italic;margin-top:12px">These are defaults. You can override them per-run in the diff view.</p>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <button class="collapsible-label" @onclick="() => _modelsExpanded = !_modelsExpanded">
+                        <span class="collapsible-chevron @(_modelsExpanded ? "open" : "")">›</span>
+                        <p class="setting-label" style="display:inline">Available models</p>
+                    </button>
+                    <p class="setting-desc">
+                        @if (ModelService.LastFetchedAt.HasValue)
+                        {
+                            <span>@ModelService.Models.Count model@(ModelService.Models.Count == 1 ? "" : "s") · last updated @ModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
+                        }
+                        else
+                        {
+                            <span>Never fetched</span>
+                        }
+                    </p>
+                </div>
+                <button class="btn btn-sm" disabled="@ModelService.IsLoading"
+                        @onclick="RefreshModels">
+                    @(ModelService.IsLoading ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+            @if (_modelsExpanded && ModelService.Models.Count > 0)
+            {
+                <div class="model-list">
+                    @foreach (var model in ModelService.Models)
+                    {
+                        var capturedId = model.Id;
+                        <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
+                            <div class="model-list-meta">
+                                <code class="model-list-id">@model.Id</code>
+                            </div>
+                            <div class="model-list-name-row">
+                                <input class="model-name-input"
+                                       value="@model.DisplayName"
+                                       @onchange="e => ModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                       title="Edit display name" />
+                                @if (model.IsCustomName)
+                                {
+                                    <button class="model-reset-btn" title="Reset to default name"
+                                            @onclick="() => ModelService.ResetDisplayName(capturedId)">↺</button>
+                                }
+                                <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                        title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                        @onclick="() => ModelService.ToggleHidden(capturedId)">
+                                    <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Cached results</p>
+                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored.")</p>
+                </div>
+                <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
+                        @onclick="() => _showClearCacheConfirm = true">Clear</button>
+            </div>
+        </div>
+    </section>
+
+    @if (_showClearCacheConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearCacheConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear cached results?</p>
+                <p class="modal-body">All @AiCache.Count stored AI response@(AiCache.Count == 1 ? "" : "s") will be deleted. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearCacheConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearAiCache">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <section class="settings-section">
+        <p class="section-title">Unsupported Features</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Analysis cross-links</p>
+                    <p class="setting-desc">Show clickable file references in analysis results, and display comment indicators in the diff panel at referenced lines. This feature is experimental and may not work correctly.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="analysisLinksEnabled" @bind:after="SaveAnalysisLinks" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
     </section>
 
     <section class="settings-section">
@@ -71,15 +240,30 @@
 
     private string _returnUrl = "/";
 
-    private int maxRecent;
+    private int  maxRecent;
     private bool fontLigatures;
+    private bool aiToolsEnabled;
+    private int  aiMaxTurns;
+    private bool analysisLinksEnabled;
+    private bool _showClearCacheConfirm;
+    private bool _modelsExpanded;
 
     protected override void OnInitialized()
     {
-        _returnUrl = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
-        maxRecent = Svc.MaxRecentRepositories;
-        fontLigatures = Svc.FontLigatures;
+        _returnUrl     = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
+        maxRecent             = Svc.MaxRecentRepositories;
+        fontLigatures         = Svc.FontLigatures;
+        aiToolsEnabled        = Svc.AiToolsEnabled;
+        aiMaxTurns            = Svc.AiMaxTurns;
+        analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
+        ModelService.ModelsChanged += OnModelsChanged;
     }
+
+    private void OnModelsChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ModelService.ModelsChanged -= OnModelsChanged;
+
+    private async Task RefreshModels() => await ModelService.RefreshAsync();
 
     private void SetTheme(AppTheme theme)
     {
@@ -92,6 +276,29 @@
 
     private void SaveFontLigatures() =>
         Svc.FontLigatures = fontLigatures;
+
+    private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
+    private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
+    private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;
+
+    private void ClearRepoHistory()
+    {
+        foreach (var path in Svc.RecentRepositoryPaths.ToList())
+            Svc.RemoveRecentRepository(path);
+        StateHasChanged();
+    }
+
+    private void ClearAiCache()
+    {
+        AiCache.Clear();
+        _showClearCacheConfirm = false;
+    }
+
+    private void ReloadAuth()
+    {
+        ClaudeAuth.Reload();
+        StateHasChanged();
+    }
 
     private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";
 }
