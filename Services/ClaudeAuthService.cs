@@ -159,8 +159,8 @@ public class ClaudeAuthService : IClaudeAuthService
     }
 
     // Note: RefreshAsync simply reloads from disk. Actual OAuth token refresh is handled
-    // transparently by the claude CLI subprocess; DiffThis never calls the Anthropic API
-    // directly, so there is no bearer token to refresh on our side.
+    // transparently by the claude CLI subprocess. DiffThis does call the Anthropic API
+    // directly for model discovery (see ClaudeModelService), but not for completion requests.
     public Task<bool> RefreshAsync()
     {
         Reload();
