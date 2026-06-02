@@ -36,3 +36,7 @@ Allow opening and comparing a repo without storing it locally
 ## Add Copilot support
 
 ## Add Ollama support
+
+## Caching refactor
+
+for caching context and code reviews, when comparing branches without a specified commit hash, seems to keep cached replies even when latest commit changes.
