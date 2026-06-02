@@ -33,8 +33,8 @@ else
             <div class="toolbar-actions">
                 <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)">← Branches</a>
                 <a class="btn btn-sm" href="/">← Repositories</a>
-                <button class="btn btn-sm" @onclick="ExportMarkdown">Export Markdown</button>
-                <a class="btn btn-sm" href="/settings?from=/diff">Settings</a>
+                <button class="btn btn-sm" title="Export Markdown" @onclick="ExportMarkdown"><span class="icon icon-markdown" style="width:16px;height:16px"></span></button>
+                <a class="btn btn-sm" title="Settings" href="/settings?from=/diff"><span class="icon icon-gear" style="width:16px;height:16px"></span></a>
             </div>
         </div>
 
@@ -142,15 +142,10 @@ else
     {
         if (_diff is null) return;
         var aiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
-        var path = ExportPath("md");
-        await Export.ExportMarkdownAsync(_diff, aiResults, path);
-        await JS.InvokeVoidAsync("alert", $"Saved to:\n{path}");
-    }
-
-    private string ExportPath(string ext)
-    {
-        var name = $"diff_{_diff!.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.{ext}"
+        var markdown = Export.GenerateMarkdown(_diff, aiResults);
+        var filename = $"diff_{_diff.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.md"
             .Replace('/', '-').Replace('\\', '-');
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), name);
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(markdown));
+        await FileSaver.Default.SaveAsync(filename, stream, CancellationToken.None);
     }
 }
