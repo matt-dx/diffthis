@@ -202,10 +202,9 @@
     {
         if (_lastDiff != Diff)
         {
-            var genuineChange = _lastDiff is not null;
             _lastDiff = Diff;
             _selectedIndex = -1;
-            if (genuineChange) Session.ResetDiffState();
+            Session.ResetDiffState();
             _highlighted.Clear();
             _highlighting = Diff is not null;
         }

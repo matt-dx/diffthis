@@ -41,7 +41,7 @@ public class ExportService : IExportService
 
         foreach (var file in diff.Files)
         {
-            sb.AppendLine($"### {file.FileName} - {file.DisplayPath}");
+            sb.AppendLine($"### {file.FileName} - `{file.DisplayPath}`");
             sb.AppendLine();
 
             if (file.IsBinary)
@@ -79,6 +79,7 @@ public class ExportService : IExportService
 
         if (aiResults.Count == 0) return sb.ToString();
 
+        sb.AppendLine();
         sb.AppendLine("## Analysis");
         sb.AppendLine();
 
@@ -107,16 +108,27 @@ public class ExportService : IExportService
         return sb.ToString();
     }
 
-    /// Shifts all ATX headings in the text down by two levels (# → ###, ## → ####, etc.)
-    /// so that AI sub-headings nest correctly under their ### parent section.
+    /// Shifts all ATX headings down by three levels (# → ####, ## → #####, etc.), clamped at h6,
+    /// so AI sub-headings nest under their ### parent section. Skips lines inside fenced code blocks.
     private static string PromoteHeadings(string text)
     {
-        var lines = text.Split('\n');
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var inFence = false;
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
-            if (line.StartsWith('#'))
-                lines[i] = "##" + line;
+            if (line.StartsWith("```") || line.StartsWith("~~~"))
+            {
+                inFence = !inFence;
+                continue;
+            }
+            if (!inFence && line.StartsWith('#'))
+            {
+                var count = 0;
+                while (count < line.Length && line[count] == '#') count++;
+                var newCount = Math.Min(count + 3, 6);
+                lines[i] = new string('#', newCount) + line[count..];
+            }
         }
         return string.Join('\n', lines);
     }

@@ -22,7 +22,7 @@ else
             <div class="toolbar-title">
                 <span class="tname">@_diff.RepositoryName</span>
                 <a class="btn btn-sm toolbar-branches-btn" title="Change branches" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)"><span class="icon icon-branch" style="width:16px;height:16px"></span></a>
-                <span class="sep"></span>
+                <span class="sep">·</span>
                 <code>@_diff.BaseDisplay</code>
                 <span class="arrow">→</span>
                 <code>@_diff.CompareDisplay</code>
@@ -139,8 +139,12 @@ else
         var aiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
         var markdown = Export.GenerateMarkdown(_diff, aiResults);
         var filename = $"diff_{_diff.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.md"
-            .Replace('/', '-').Replace('\\', '-');
+            .Replace('/', '-').Replace('\\', '-')
+            .Replace(':', '-').Replace('*', '-').Replace('?', '-')
+            .Replace('"', '-').Replace('<', '-').Replace('>', '-').Replace('|', '-');
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(markdown));
-        await FileSaver.Default.SaveAsync(filename, stream, CancellationToken.None);
+        var result = await FileSaver.Default.SaveAsync(filename, stream, CancellationToken.None);
+        if (!result.IsSuccessful && result.Exception is not null)
+            await JS.InvokeVoidAsync("alert", $"Export failed: {result.Exception.Message}");
     }
 }
