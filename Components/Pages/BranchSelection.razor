@@ -127,12 +127,20 @@
     private bool baseCommitsLoading;
     private bool compareCommitsLoading;
 
-    private bool CanCompare =>
-        !string.IsNullOrEmpty(baseBranch) &&
-        !string.IsNullOrEmpty(compareBranch) &&
-        baseBranch != compareBranch &&
-        !baseCommitsLoading &&
-        !compareCommitsLoading;
+    private bool CanCompare
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(baseBranch) || string.IsNullOrEmpty(compareBranch)) return false;
+            if (baseCommitsLoading || compareCommitsLoading) return false;
+            // Same branch is only valid when both sides are pinned to distinct commits
+            if (baseBranch == compareBranch)
+                return pinBase && pinCompare &&
+                       !string.IsNullOrEmpty(baseCommit) && !string.IsNullOrEmpty(compareCommit) &&
+                       baseCommit != compareCommit;
+            return true;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {

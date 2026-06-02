@@ -6,4 +6,10 @@ namespace DiffThis.Services;
 public class DiffSessionService
 {
     public DiffResult? CurrentDiff { get; set; }
+    public HashSet<int> HiddenFiles { get; } = [];
+
+    public void ResetDiffState()
+    {
+        HiddenFiles.Clear();
+    }
 }

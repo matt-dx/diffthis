@@ -60,7 +60,16 @@ else
     <div class="diff-layout @(Settings.FontLigatures ? "ligatures" : "")">
 
         <!-- Sidebar -->
-        <aside class="file-sidebar">
+        <aside class="file-sidebar @(SidebarCollapsed ? "sidebar-collapsed" : "")">
+            <div class="sidebar-toggle">
+                <button class="sidebar-toggle-btn"
+                        title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        aria-label="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        aria-expanded="@(SidebarCollapsed ? "false" : "true")"
+                        @onclick:stopPropagation @onclick="() => SidebarCollapsedChanged.InvokeAsync(!SidebarCollapsed)">
+                    <span class="icon @(SidebarCollapsed ? "icon-chevron-bar-right" : "icon-chevron-bar-left")" style="width:16px;height:16px"></span>
+                </button>
+            </div>
 
             <div class="sidebar-heading">Context</div>
             @foreach (var (runKey, sideIdx) in explainItems.Select((k, i) => (k, i)))
@@ -167,7 +176,7 @@ else
                 allEntries.TryGetValue(k, out var entry);
                 _errors.TryGetValue(k, out var cardError);
 
-                <div class="diff-file @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
+                <div class="diff-file diff-file-@feat @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
                     <div class="file-header">
                         <span class="claude-badge"><span class="icon icon-claude"></span></span>
                         <span class="file-path">
@@ -251,6 +260,9 @@ else
 
 @code {
     [Parameter] public DiffResult? Diff { get; set; }
+
+    [Parameter] public bool SidebarCollapsed { get; set; }
+    [Parameter] public EventCallback<bool> SidebarCollapsedChanged { get; set; }
 
     private string?                               _selectedFeature;
     private AiRunKey?                             _selectedKey;

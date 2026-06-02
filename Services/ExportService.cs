@@ -8,12 +8,17 @@ public class ExportService : IExportService
     public string GenerateMarkdown(DiffResult diff)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"# Diff: `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
+        sb.AppendLine($"# DiffThis {diff.RepositoryName}");
         sb.AppendLine();
-        sb.AppendLine($"**Repository:** {diff.RepositoryName}");
+        sb.AppendLine($"**Comparing:** `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
+        sb.AppendLine($"**Local path:** `{diff.RepositoryPath}`");
+        if (diff.RemoteUri.Length > 0)
+            sb.AppendLine($"**Remote:** {diff.RemoteUri}");
         sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
-        sb.AppendLine($"## Summary");
+        sb.AppendLine("## Diff");
+        sb.AppendLine();
+        sb.AppendLine("### Summary");
         sb.AppendLine();
         sb.AppendLine($"{diff.Files.Count} files changed &nbsp; **+{diff.TotalAdditions}** additions &nbsp; **-{diff.TotalDeletions}** deletions");
         sb.AppendLine();
@@ -36,7 +41,7 @@ public class ExportService : IExportService
 
         foreach (var file in diff.Files)
         {
-            sb.AppendLine($"## `{file.DisplayPath}`");
+            sb.AppendLine($"### {file.FileName} - `{file.DisplayPath}`");
             sb.AppendLine();
 
             if (file.IsBinary)
@@ -78,7 +83,9 @@ public class ExportService : IExportService
         sb.AppendLine("## Analysis");
         sb.AppendLine();
 
-        foreach (var (runKey, entry) in aiResults.OrderBy(kv => kv.Value.CachedAt))
+        foreach (var (runKey, entry) in aiResults
+            .OrderBy(kv => kv.Key.Feature == "review" ? 1 : 0)
+            .ThenBy(kv => kv.Value.CachedAt))
         {
             var modelLabel = runKey.Model switch
             {
@@ -87,16 +94,47 @@ public class ExportService : IExportService
                 "claude-haiku-4-5-20251001" => "Haiku 4.5",
                 _                           => runKey.Model,
             };
-            var featureLabel = runKey.Feature == "review" ? "Code Review" : "Explain Changes";
-            sb.AppendLine($"### {featureLabel} — {runKey.TabLabel(modelLabel)}");
+            var sectionLabel = runKey.Feature == "review"
+                ? $"Review - {runKey.TabLabel(modelLabel)}"
+                : $"Context - {runKey.TabLabel(modelLabel)}";
+            sb.AppendLine($"### {sectionLabel}");
             sb.AppendLine();
-            sb.AppendLine($"_Cached {entry.CachedAt.ToLocalTime():yyyy-MM-dd HH:mm}_");
+            sb.AppendLine($"**Time received:** {entry.CachedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
             sb.AppendLine();
-            sb.AppendLine(entry.Response.TrimEnd());
+            sb.AppendLine(PromoteHeadings(entry.Response.TrimEnd()));
             sb.AppendLine();
         }
 
         return sb.ToString();
+    }
+
+    /// Shifts all ATX headings down by three levels (# → ####, ## → #####, etc.), clamped at h6,
+    /// so AI sub-headings nest under their ### parent section. Skips lines inside fenced code blocks.
+    private static string PromoteHeadings(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var inFence = false;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (line.StartsWith("```") || line.StartsWith("~~~"))
+            {
+                inFence = !inFence;
+                continue;
+            }
+            if (!inFence && line.StartsWith('#'))
+            {
+                var count = 0;
+                while (count < line.Length && line[count] == '#') count++;
+                // Only shift valid ATX headings: 1–6 '#' followed by space/tab or end-of-line
+                if (count >= 1 && count <= 6 && (count == line.Length || line[count] == ' ' || line[count] == '\t'))
+                {
+                    var newCount = Math.Min(count + 3, 6);
+                    lines[i] = new string('#', newCount) + line[count..];
+                }
+            }
+        }
+        return string.Join('\n', lines);
     }
 
     public async Task ExportMarkdownAsync(DiffResult diff, string filePath)
