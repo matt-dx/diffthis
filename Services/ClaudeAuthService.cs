@@ -47,22 +47,23 @@ public class ClaudeAuthService : IClaudeAuthService
     }
 
     // .cmd/.bat files cannot be launched directly with UseShellExecute=false;
-    // they require cmd.exe /c as the host process. Use this helper everywhere
-    // instead of constructing ProcessStartInfo(ClaudeExe) directly.
+    // they require cmd.exe /c as the host process.
+    // Using ArgumentList (not the Arguments string) for all cases lets .NET handle
+    // quoting via CreateProcess rules — no hand-rolled cmd.exe escaping needed.
     internal static ProcessStartInfo CreateProcessStartInfo()
     {
         var exe = ClaudeExe;
         var ext = Path.GetExtension(exe).ToLowerInvariant();
         if (ext is ".cmd" or ".bat")
         {
-            // cmd.exe /c cannot use ArgumentList alongside Arguments, so callers
-            // must append extra args via AppendArg() rather than ArgumentList.Add().
-            return new ProcessStartInfo("cmd.exe")
+            var psi = new ProcessStartInfo("cmd.exe")
             {
                 UseShellExecute = false,
                 CreateNoWindow  = true,
-                Arguments       = $"/c \"{exe}\"",
             };
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(exe);
+            return psi;
         }
         return new ProcessStartInfo(exe)
         {
@@ -71,47 +72,9 @@ public class ClaudeAuthService : IClaudeAuthService
         };
     }
 
-    // Appends a single argument, handling both the cmd-wrapped and direct cases.
-    // When cmd-wrapped, every arg is quoted using the CommandLineToArgvW algorithm
-    // so that cmd.exe metacharacters (&, |, <, >, ^) inside the quoted string are
-    // treated as literals and cannot be used for command injection.
+    // Uniform arg append — ArgumentList works for both the direct and cmd-wrapped PSI.
     internal static void AppendArg(ProcessStartInfo psi, string arg)
-    {
-        if (psi.FileName == "cmd.exe")
-            psi.Arguments += " " + QuoteArgForCmd(arg);
-        else
-            psi.ArgumentList.Add(arg);
-    }
-
-    // CommandLineToArgvW-compatible quoting: always wraps in " and correctly
-    // handles backslashes adjacent to quote characters.
-    private static string QuoteArgForCmd(string arg)
-    {
-        var sb = new System.Text.StringBuilder("\"");
-        int backslashes = 0;
-        foreach (char c in arg)
-        {
-            if (c == '\\')
-            {
-                backslashes++;
-            }
-            else if (c == '"')
-            {
-                sb.Append('\\', backslashes * 2 + 1);
-                sb.Append('"');
-                backslashes = 0;
-            }
-            else
-            {
-                sb.Append('\\', backslashes);
-                sb.Append(c);
-                backslashes = 0;
-            }
-        }
-        sb.Append('\\', backslashes * 2);
-        sb.Append('"');
-        return sb.ToString();
-    }
+        => psi.ArgumentList.Add(arg);
 
     private ClaudeCredentials? _creds;
 
