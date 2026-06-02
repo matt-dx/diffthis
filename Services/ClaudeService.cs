@@ -34,27 +34,23 @@ public class ClaudeService : IClaudeService
         if (_auth.State != ClaudeAuthState.Authenticated)
             throw new InvalidOperationException("Not connected to Claude. Check Settings.");
 
-        var psi = new ProcessStartInfo(ClaudeAuthService.ClaudeExe)
-        {
-            UseShellExecute        = false,
-            RedirectStandardInput  = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding  = System.Text.Encoding.UTF8,
-            CreateNoWindow         = true,
-            WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        };
-        psi.ArgumentList.Add("-p");
-        psi.ArgumentList.Add("--model");         psi.ArgumentList.Add(model);
-        psi.ArgumentList.Add("--output-format"); psi.ArgumentList.Add("text");
+        var psi = ClaudeAuthService.CreateProcessStartInfo();
+        psi.RedirectStandardInput  = true;
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError  = true;
+        psi.StandardOutputEncoding = System.Text.Encoding.UTF8;
+        psi.StandardErrorEncoding  = System.Text.Encoding.UTF8;
+        psi.WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        ClaudeAuthService.AppendArg(psi, "-p");
+        ClaudeAuthService.AppendArg(psi, "--model");         ClaudeAuthService.AppendArg(psi, model);
+        ClaudeAuthService.AppendArg(psi, "--output-format"); ClaudeAuthService.AppendArg(psi, "text");
         if (!toolsEnabled)
         {
-            psi.ArgumentList.Add("--allowedTools"); psi.ArgumentList.Add("none");
+            ClaudeAuthService.AppendArg(psi, "--allowedTools"); ClaudeAuthService.AppendArg(psi, "none");
         }
         if (maxTurns > 0)
         {
-            psi.ArgumentList.Add("--max-turns"); psi.ArgumentList.Add(maxTurns.ToString());
+            ClaudeAuthService.AppendArg(psi, "--max-turns"); ClaudeAuthService.AppendArg(psi, maxTurns.ToString());
         }
 
         using var proc = Process.Start(psi)

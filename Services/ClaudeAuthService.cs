@@ -46,6 +46,40 @@ public class ClaudeAuthService : IClaudeAuthService
         return "claude"; // let the OS try; will fail with a clear message
     }
 
+    // .cmd/.bat files cannot be launched directly with UseShellExecute=false;
+    // they require cmd.exe /c as the host process. Use this helper everywhere
+    // instead of constructing ProcessStartInfo(ClaudeExe) directly.
+    internal static ProcessStartInfo CreateProcessStartInfo()
+    {
+        var exe = ClaudeExe;
+        var ext = Path.GetExtension(exe).ToLowerInvariant();
+        if (ext is ".cmd" or ".bat")
+        {
+            // cmd.exe /c cannot use ArgumentList alongside Arguments, so callers
+            // must append extra args via AppendArg() rather than ArgumentList.Add().
+            return new ProcessStartInfo("cmd.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow  = true,
+                Arguments       = $"/c \"{exe}\"",
+            };
+        }
+        return new ProcessStartInfo(exe)
+        {
+            UseShellExecute = false,
+            CreateNoWindow  = true,
+        };
+    }
+
+    // Appends a single argument, handling both the cmd-wrapped and direct cases.
+    internal static void AppendArg(ProcessStartInfo psi, string arg)
+    {
+        if (psi.FileName == "cmd.exe")
+            psi.Arguments += " " + (arg.Contains(' ') ? $"\"{arg}\"" : arg);
+        else
+            psi.ArgumentList.Add(arg);
+    }
+
     private ClaudeCredentials? _creds;
 
     public ClaudeAuthState State            { get; private set; } = ClaudeAuthState.NotFound;
@@ -106,18 +140,14 @@ public class ClaudeAuthService : IClaudeAuthService
         Process?  proc = null;
         try
         {
-            var psi = new ProcessStartInfo(ClaudeExe)
-            {
-                UseShellExecute        = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError  = true,
-                CreateNoWindow         = true,
-                WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            };
-            psi.ArgumentList.Add("auth");
-            psi.ArgumentList.Add("status");
-            psi.ArgumentList.Add("--output-format");
-            psi.ArgumentList.Add("json");
+            var psi = CreateProcessStartInfo();
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError  = true;
+            psi.WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            AppendArg(psi, "auth");
+            AppendArg(psi, "status");
+            AppendArg(psi, "--output-format");
+            AppendArg(psi, "json");
 
             proc = Process.Start(psi);
             if (proc is null) return;
