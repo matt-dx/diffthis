@@ -119,23 +119,31 @@ public class AiCacheService
     {
         try
         {
-            // Evict oldest entries if the cache has grown too large
-            if (_cache.Count > MaxEntries)
+            lock (_cache)
             {
-                var toRemove = _cache
-                    .OrderBy(kv => kv.Value.CachedAt)
-                    .Take(_cache.Count - TrimTarget)
-                    .Select(kv => kv.Key)
-                    .ToList();
-                foreach (var k in toRemove)
-                    _cache.TryRemove(k, out _);
-            }
+                // Evict oldest entries if the cache has grown too large
+                if (_cache.Count > MaxEntries)
+                {
+                    var toRemove = _cache
+                        .OrderBy(kv => kv.Value.CachedAt)
+                        .Take(_cache.Count - TrimTarget)
+                        .Select(kv => kv.Key)
+                        .ToList();
+                    foreach (var k in toRemove)
+                        _cache.TryRemove(k, out _);
+                }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!);
-            File.WriteAllText(CachePath, JsonSerializer.Serialize(
-                new Dictionary<string, AiCacheEntry>(_cache),
-                new JsonSerializerOptions { WriteIndented = false }));
+                Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!);
+
+                var tmp = CachePath + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(
+                    new Dictionary<string, AiCacheEntry>(_cache),
+                    new JsonSerializerOptions { WriteIndented = false }));
+                File.Move(tmp, CachePath, overwrite: true);
+            }
         }
+        catch { /* best effort */ }
+    }
         catch { /* best effort */ }
     }
 }
