@@ -18,9 +18,11 @@ else
 
         <!-- Toolbar -->
         <div class="diff-toolbar">
+            <a class="btn btn-sm" title="Repositories" href="/"><span class="icon icon-repo" style="width:16px;height:16px"></span></a>
             <div class="toolbar-title">
                 <span class="tname">@_diff.RepositoryName</span>
-                <span class="sep">:</span>
+                <a class="btn btn-sm toolbar-branches-btn" title="Change branches" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)"><span class="icon icon-branch" style="width:16px;height:16px"></span></a>
+                <span class="sep"></span>
                 <code>@_diff.BaseDisplay</code>
                 <span class="arrow">→</span>
                 <code>@_diff.CompareDisplay</code>
@@ -31,8 +33,6 @@ else
                 <span class="del">-@_diff.TotalDeletions</span>
             </div>
             <div class="toolbar-actions">
-                <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)">← Branches</a>
-                <a class="btn btn-sm" href="/">← Repositories</a>
                 <button class="btn btn-sm" title="Export Markdown" @onclick="ExportMarkdown"><span class="icon icon-markdown" style="width:16px;height:16px"></span></button>
                 <a class="btn btn-sm" title="Settings" href="/settings?from=/diff"><span class="icon icon-gear" style="width:16px;height:16px"></span></a>
             </div>
