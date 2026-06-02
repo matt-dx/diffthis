@@ -72,12 +72,45 @@ public class ClaudeAuthService : IClaudeAuthService
     }
 
     // Appends a single argument, handling both the cmd-wrapped and direct cases.
+    // When cmd-wrapped, every arg is quoted using the CommandLineToArgvW algorithm
+    // so that cmd.exe metacharacters (&, |, <, >, ^) inside the quoted string are
+    // treated as literals and cannot be used for command injection.
     internal static void AppendArg(ProcessStartInfo psi, string arg)
     {
         if (psi.FileName == "cmd.exe")
-            psi.Arguments += " " + (arg.Contains(' ') ? $"\"{arg}\"" : arg);
+            psi.Arguments += " " + QuoteArgForCmd(arg);
         else
             psi.ArgumentList.Add(arg);
+    }
+
+    // CommandLineToArgvW-compatible quoting: always wraps in " and correctly
+    // handles backslashes adjacent to quote characters.
+    private static string QuoteArgForCmd(string arg)
+    {
+        var sb = new System.Text.StringBuilder("\"");
+        int backslashes = 0;
+        foreach (char c in arg)
+        {
+            if (c == '\\')
+            {
+                backslashes++;
+            }
+            else if (c == '"')
+            {
+                sb.Append('\\', backslashes * 2 + 1);
+                sb.Append('"');
+                backslashes = 0;
+            }
+            else
+            {
+                sb.Append('\\', backslashes);
+                sb.Append(c);
+                backslashes = 0;
+            }
+        }
+        sb.Append('\\', backslashes * 2);
+        sb.Append('"');
+        return sb.ToString();
     }
 
     private ClaudeCredentials? _creds;
