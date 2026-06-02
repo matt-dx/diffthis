@@ -144,6 +144,4 @@ public class AiCacheService
         }
         catch { /* best effort */ }
     }
-        catch { /* best effort */ }
-    }
 }
