@@ -12,6 +12,6 @@ public interface IClaudeAuthService
     /// Re-reads the credentials file. Call after `claude auth login` or after a token refresh.
     void Reload();
 
-    /// Forces a token refresh by delegating to the claude CLI, then reloads credentials.
+    /// Reloads the credentials file from disk and returns true if the user is authenticated.
     Task<bool> RefreshAsync();
 }
