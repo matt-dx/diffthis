@@ -89,6 +89,13 @@
   --hl-special: #dcdcaa;
 }
 
+/* ── Scrollbars ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar              { width: 8px; height: 8px; }
+::-webkit-scrollbar-track        { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb        { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover  { background: var(--fg-muted); }
+::-webkit-scrollbar-corner       { background: var(--bg-secondary); }
+
 /* ── Reset ───────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body               { height: 100%; }
