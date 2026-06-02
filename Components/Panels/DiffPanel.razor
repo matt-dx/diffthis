@@ -1,6 +1,7 @@
 @inject ISettingsService Settings
 @inject IAnalysisLinkService LinkService
 @inject IClaudeModelService ModelService
+@inject DiffSessionService Session
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -13,7 +14,7 @@
             <div class="sidebar-heading">Changed Files</div>
             @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
             {
-                var hidden = _hiddenFiles.Contains(i);
+                var hidden = Session.HiddenFiles.Contains(i);
                 <div class="file-item @(_selectedIndex == i ? "active" : "") @(hidden ? "file-hidden" : "")"
                      @onclick="() => ScrollToFile(i)">
                     <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
@@ -52,7 +53,7 @@
             @foreach (var (file, fi) in Diff.Files.Select((f, i) => (f, i)))
             {
                 var fileRefs = Settings.AnalysisLinksEnabled ? LinkService.GetFileRefs(fi) : (IReadOnlyList<AnalysisRef>)[];
-                <div class="diff-file @(_hiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
+                <div class="diff-file @(Session.HiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
                     <div class="file-header">
                         <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
                         <span class="file-path">
@@ -176,7 +177,6 @@
     [Parameter] public EventCallback PendingFocusConsumed { get; set; }
 
     private int _selectedIndex = -1;
-    private HashSet<int> _hiddenFiles = [];
     private Dictionary<int, List<string>> _highlighted = [];
     private bool _highlighting;
     private DiffResult? _lastDiff;
@@ -195,7 +195,7 @@
         {
             _lastDiff = Diff;
             _selectedIndex = -1;
-            _hiddenFiles.Clear();
+            Session.ResetDiffState();
             _highlighted.Clear();
             _highlighting = Diff is not null;
         }
@@ -227,7 +227,7 @@
 
             if (targetId is not null)
             {
-                _hiddenFiles.Remove(fileIdx);
+                Session.HiddenFiles.Remove(fileIdx);
                 _selectedIndex = fileIdx;
                 // Fall back to the file header if the specific line isn't in the diff hunk
                 await JS.InvokeVoidAsync("scrollToElement", targetId, $"file-{fileIdx}");
@@ -280,15 +280,15 @@
 
     private async Task ScrollToFile(int index)
     {
-        _hiddenFiles.Remove(index);
+        Session.HiddenFiles.Remove(index);
         _selectedIndex = index;
         await JS.InvokeVoidAsync("scrollToElement", $"file-{index}");
     }
 
     private void ToggleFile(int index)
     {
-        if (!_hiddenFiles.Remove(index))
-            _hiddenFiles.Add(index);
+        if (!Session.HiddenFiles.Remove(index))
+            Session.HiddenFiles.Add(index);
     }
 
     private static string RefIconClass(RefCategory c) => c switch

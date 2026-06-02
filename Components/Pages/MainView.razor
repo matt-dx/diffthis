@@ -80,12 +80,12 @@ else
                 </button>
             </div>
             <div class="panel-tab-content">
-                <div class="@(_activeTab == 0 ? "" : "panel-hidden")">
+                <div class="panel-column @(_activeTab == 0 ? "" : "panel-hidden")">
                     <DiffPanel Diff="_diff"
                                PendingFocus="_pendingFocus"
                                PendingFocusConsumed="OnFocusConsumed" />
                 </div>
-                <div class="@(_activeTab == 1 ? "" : "panel-hidden")">
+                <div class="panel-column @(_activeTab == 1 ? "" : "panel-hidden")">
                     <AnalysisPanel Diff="_diff" />
                 </div>
             </div>

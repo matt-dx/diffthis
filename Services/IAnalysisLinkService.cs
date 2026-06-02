@@ -7,6 +7,9 @@ public interface IAnalysisLinkService
     /// Clear all refs and visibility state (call when diff changes).
     void Reset();
 
+    /// Clear only the parsed ref indexes; preserves visibility state (call on component re-init with same diff).
+    void ResetIndexes();
+
     /// Re-parse all entries for the current diff; replaces any prior refs.
     void Refresh(DiffResult diff, IReadOnlyDictionary<AiRunKey, AiCacheEntry> entries);
 

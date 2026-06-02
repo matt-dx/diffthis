@@ -167,7 +167,7 @@ else
                 allEntries.TryGetValue(k, out var entry);
                 _errors.TryGetValue(k, out var cardError);
 
-                <div class="diff-file @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
+                <div class="diff-file diff-file-@feat @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
                     <div class="file-header">
                         <span class="claude-badge"><span class="icon icon-claude"></span></span>
                         <span class="file-path">
@@ -283,7 +283,7 @@ else
         _reviewAddModel   = "";
         _pendingDeleteKey = null;
 
-        LinkService.Reset();
+        LinkService.ResetIndexes();
         if (Diff is not null)
             LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
     }

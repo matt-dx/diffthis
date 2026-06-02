@@ -612,6 +612,10 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   background: var(--bg); border: 1px solid var(--border);
   color: var(--fg-secondary);
 }
+.diff-file-explain { border-left: 3px solid #3b82f6; }
+.diff-file-explain .analysis-feature-badge { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.35); color: #60a5fa; }
+.diff-file-review  { border-left: 3px solid #f97316; }
+.diff-file-review  .analysis-feature-badge { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.35); color: #fb923c; }
 
 .analysis-loading-inline {
   display: inline-flex; align-items: center; gap: 8px;
@@ -688,13 +692,13 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .panel-tab-content {
   flex: 1; overflow: hidden; display: flex; flex-direction: column;
 }
-.panel-hidden { display: none; }
+.panel-hidden { display: none !important; }
 .panels-side-by-side {
   flex: 1; display: grid; grid-template-columns: 1fr 1fr;
   overflow: hidden;
 }
 .panel-column {
-  display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden; flex: 1;
 }
 .panel-column-border { border-left: 1px solid var(--border); }
 .panel-heading {

@@ -43,6 +43,12 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         _changed?.Invoke();
     }
 
+    public void ResetIndexes()
+    {
+        _lineIndex = [];
+        _fileIndex = [];
+    }
+
     public void Refresh(DiffResult diff, IReadOnlyDictionary<AiRunKey, AiCacheEntry> entries)
     {
         var index = new Dictionary<(int fileIdx, int lineNum), List<AnalysisRef>>();
