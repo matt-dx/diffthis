@@ -8,12 +8,15 @@ public class ExportService : IExportService
     public string GenerateMarkdown(DiffResult diff)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"# Diff: `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
+        sb.AppendLine($"# DiffThis {diff.RepositoryName}");
         sb.AppendLine();
-        sb.AppendLine($"**Repository:** {diff.RepositoryName}");
+        sb.AppendLine($"**Comparing:** `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
+        sb.AppendLine($"**Repository:** {diff.RepositoryPath}");
         sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
-        sb.AppendLine($"## Summary");
+        sb.AppendLine("## Diff");
+        sb.AppendLine();
+        sb.AppendLine("### Summary");
         sb.AppendLine();
         sb.AppendLine($"{diff.Files.Count} files changed &nbsp; **+{diff.TotalAdditions}** additions &nbsp; **-{diff.TotalDeletions}** deletions");
         sb.AppendLine();
@@ -36,7 +39,7 @@ public class ExportService : IExportService
 
         foreach (var file in diff.Files)
         {
-            sb.AppendLine($"## `{file.DisplayPath}`");
+            sb.AppendLine($"### {file.FileName} - {file.DisplayPath}");
             sb.AppendLine();
 
             if (file.IsBinary)
@@ -74,11 +77,12 @@ public class ExportService : IExportService
 
         if (aiResults.Count == 0) return sb.ToString();
 
-        sb.AppendLine();
         sb.AppendLine("## Analysis");
         sb.AppendLine();
 
-        foreach (var (runKey, entry) in aiResults.OrderBy(kv => kv.Value.CachedAt))
+        foreach (var (runKey, entry) in aiResults
+            .OrderBy(kv => kv.Key.Feature == "review" ? 1 : 0)
+            .ThenBy(kv => kv.Value.CachedAt))
         {
             var modelLabel = runKey.Model switch
             {
@@ -87,16 +91,32 @@ public class ExportService : IExportService
                 "claude-haiku-4-5-20251001" => "Haiku 4.5",
                 _                           => runKey.Model,
             };
-            var featureLabel = runKey.Feature == "review" ? "Code Review" : "Explain Changes";
-            sb.AppendLine($"### {featureLabel} — {runKey.TabLabel(modelLabel)}");
+            var sectionLabel = runKey.Feature == "review"
+                ? $"Review - {runKey.TabLabel(modelLabel)}"
+                : $"Context - {runKey.TabLabel(modelLabel)}";
+            sb.AppendLine($"### {sectionLabel}");
             sb.AppendLine();
-            sb.AppendLine($"_Cached {entry.CachedAt.ToLocalTime():yyyy-MM-dd HH:mm}_");
+            sb.AppendLine($"**Time received:** {entry.CachedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
             sb.AppendLine();
-            sb.AppendLine(entry.Response.TrimEnd());
+            sb.AppendLine(PromoteHeadings(entry.Response.TrimEnd()));
             sb.AppendLine();
         }
 
         return sb.ToString();
+    }
+
+    /// Shifts all ATX headings in the text down by two levels (# → ###, ## → ####, etc.)
+    /// so that AI sub-headings nest correctly under their ### parent section.
+    private static string PromoteHeadings(string text)
+    {
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (line.StartsWith('#'))
+                lines[i] = "##" + line;
+        }
+        return string.Join('\n', lines);
     }
 
     public async Task ExportMarkdownAsync(DiffResult diff, string filePath)
