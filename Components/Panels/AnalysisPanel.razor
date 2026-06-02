@@ -393,10 +393,14 @@ else
         @"(<code(?:\s[^>]*)?>)([^<]+)(</code>)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .DisableHtml()
+        .Build();
+
     private string RenderMarkdown(string markdown)
     {
-        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-        var html     = Markdown.ToHtml(markdown, pipeline);
+        var html = Markdown.ToHtml(markdown, MarkdownPipeline);
 
         if (!Settings.AnalysisLinksEnabled) return html;
 
