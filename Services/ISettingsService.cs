@@ -23,5 +23,15 @@ public interface ISettingsService
     // ── Unsupported / experimental features ───────────────────────────────
     bool AnalysisLinksEnabled { get; set; }  // default: false
 
+    // ── Window state ───────────────────────────────────────────────────────
+    int WindowX              { get; set; }  // -1 = not yet saved
+    int WindowY              { get; set; }
+    int WindowWidth          { get; set; }
+    int WindowHeight         { get; set; }
+    int WindowMonitorLeft    { get; set; }  // WorkArea of the monitor last used
+    int WindowMonitorTop     { get; set; }
+    int WindowMonitorRight   { get; set; }
+    int WindowMonitorBottom  { get; set; }
+
     event Action? ThemeChanged;
 }

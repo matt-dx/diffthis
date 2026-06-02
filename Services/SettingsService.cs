@@ -14,6 +14,14 @@ public class SettingsService : ISettingsService
     private const string AiMaxTurnsKey        = "ai_max_turns";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
+    private const string WindowXKey             = "window_x";
+    private const string WindowYKey             = "window_y";
+    private const string WindowWidthKey         = "window_width";
+    private const string WindowHeightKey        = "window_height";
+    private const string WindowMonitorLeftKey   = "window_monitor_left";
+    private const string WindowMonitorTopKey    = "window_monitor_top";
+    private const string WindowMonitorRightKey  = "window_monitor_right";
+    private const string WindowMonitorBottomKey = "window_monitor_bottom";
 
     public event Action? ThemeChanged;
 
@@ -98,6 +106,15 @@ public class SettingsService : ISettingsService
         get => Preferences.Get(AnalysisLinksKey, false);
         set => Preferences.Set(AnalysisLinksKey, value);
     }
+
+    public int WindowX             { get => Preferences.Get(WindowXKey,             -1);    set => Preferences.Set(WindowXKey,             value); }
+    public int WindowY             { get => Preferences.Get(WindowYKey,             -1);    set => Preferences.Set(WindowYKey,             value); }
+    public int WindowWidth         { get => Preferences.Get(WindowWidthKey,         1280);  set => Preferences.Set(WindowWidthKey,         value); }
+    public int WindowHeight        { get => Preferences.Get(WindowHeightKey,        800);   set => Preferences.Set(WindowHeightKey,        value); }
+    public int WindowMonitorLeft   { get => Preferences.Get(WindowMonitorLeftKey,   -1);    set => Preferences.Set(WindowMonitorLeftKey,   value); }
+    public int WindowMonitorTop    { get => Preferences.Get(WindowMonitorTopKey,    -1);    set => Preferences.Set(WindowMonitorTopKey,    value); }
+    public int WindowMonitorRight  { get => Preferences.Get(WindowMonitorRightKey,  -1);    set => Preferences.Set(WindowMonitorRightKey,  value); }
+    public int WindowMonitorBottom { get => Preferences.Get(WindowMonitorBottomKey, -1);    set => Preferences.Set(WindowMonitorBottomKey, value); }
 
     public void SaveBranchState(string repoPath, BranchSelectionState state)
     {
