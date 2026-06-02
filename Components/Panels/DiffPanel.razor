@@ -12,7 +12,10 @@
         <!-- File sidebar -->
         <aside class="file-sidebar @(SidebarCollapsed ? "sidebar-collapsed" : "")">
             <div class="sidebar-toggle">
-                <button class="sidebar-toggle-btn" title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                <button class="sidebar-toggle-btn"
+                        title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        aria-label="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        aria-expanded="@(SidebarCollapsed ? "false" : "true")"
                         @onclick:stopPropagation @onclick="() => SidebarCollapsedChanged.InvokeAsync(!SidebarCollapsed)">
                     <span class="icon @(SidebarCollapsed ? "icon-chevron-bar-right" : "icon-chevron-bar-left")" style="width:16px;height:16px"></span>
                 </button>

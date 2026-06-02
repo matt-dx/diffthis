@@ -11,7 +11,7 @@ public class ExportService : IExportService
         sb.AppendLine($"# DiffThis {diff.RepositoryName}");
         sb.AppendLine();
         sb.AppendLine($"**Comparing:** `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
-        sb.AppendLine($"**Repository:** {diff.RepositoryPath}");
+        sb.AppendLine($"**Local path:** `{diff.RepositoryPath}`");
         if (diff.RemoteUri.Length > 0)
             sb.AppendLine($"**Remote:** {diff.RemoteUri}");
         sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm}");
@@ -126,8 +126,12 @@ public class ExportService : IExportService
             {
                 var count = 0;
                 while (count < line.Length && line[count] == '#') count++;
-                var newCount = Math.Min(count + 3, 6);
-                lines[i] = new string('#', newCount) + line[count..];
+                // Only shift valid ATX headings: 1–6 '#' followed by space/tab or end-of-line
+                if (count >= 1 && count <= 6 && (count == line.Length || line[count] == ' ' || line[count] == '\t'))
+                {
+                    var newCount = Math.Min(count + 3, 6);
+                    lines[i] = new string('#', newCount) + line[count..];
+                }
             }
         }
         return string.Join('\n', lines);
