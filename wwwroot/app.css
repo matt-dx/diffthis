@@ -271,11 +271,45 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-sidebar {
   width: 280px; flex-shrink: 0; overflow-y: auto;
   border-right: 1px solid var(--border); background: var(--bg-secondary);
+  transition: width 0.18s ease;
+  position: relative;
 }
+.file-sidebar.sidebar-collapsed {
+  width: 32px; overflow: hidden;
+}
+.file-sidebar.sidebar-collapsed .sidebar-heading,
+.file-sidebar.sidebar-collapsed .file-item,
+.file-sidebar.sidebar-collapsed .analysis-add-row,
+.file-sidebar.sidebar-collapsed .analysis-section-heading {
+  opacity: 0; pointer-events: none;
+}
+
+/* Toggle button pinned to the top of the sidebar */
+.sidebar-toggle {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 6px 6px 0;
+  background: var(--bg-secondary);
+}
+.sidebar-collapsed .sidebar-toggle {
+  justify-content: center;
+  padding: 6px 0 0;
+}
+.sidebar-toggle-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--fg-muted); border-radius: 4px;
+  font-size: 12px; line-height: 1;
+  transition: color 0.12s, background 0.12s;
+}
+.sidebar-toggle-btn:hover { background: var(--border); color: var(--fg); }
+
 .sidebar-heading {
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--fg-muted);
   padding: 10px 12px 4px;
+  transition: opacity 0.12s;
 }
 
 .diff-content { flex: 1; overflow-y: auto; }

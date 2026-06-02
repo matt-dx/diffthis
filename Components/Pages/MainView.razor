@@ -46,7 +46,8 @@ else
                     <div class="panel-heading">Diff</div>
                     <DiffPanel Diff="_diff"
                                PendingFocus="_pendingFocus"
-                               PendingFocusConsumed="OnFocusConsumed" />
+                               PendingFocusConsumed="OnFocusConsumed"
+                               @bind-SidebarCollapsed="_diffSidebarCollapsed" />
                 </div>
                 <div class="panel-column panel-column-border">
                     <div class="panel-heading">
@@ -59,7 +60,8 @@ else
                             </svg>
                         </button>
                     </div>
-                    <AnalysisPanel Diff="_diff" />
+                    <AnalysisPanel Diff="_diff"
+                                   @bind-SidebarCollapsed="_analysisSidebarCollapsed" />
                 </div>
             </div>
         }
@@ -83,10 +85,12 @@ else
                 <div class="panel-column @(_activeTab == 0 ? "" : "panel-hidden")">
                     <DiffPanel Diff="_diff"
                                PendingFocus="_pendingFocus"
-                               PendingFocusConsumed="OnFocusConsumed" />
+                               PendingFocusConsumed="OnFocusConsumed"
+                               @bind-SidebarCollapsed="_diffSidebarCollapsed" />
                 </div>
                 <div class="panel-column @(_activeTab == 1 ? "" : "panel-hidden")">
-                    <AnalysisPanel Diff="_diff" />
+                    <AnalysisPanel Diff="_diff"
+                                   @bind-SidebarCollapsed="_analysisSidebarCollapsed" />
                 </div>
             </div>
         }
@@ -98,6 +102,8 @@ else
     private DiffResult? _diff;
     private bool _sideBySide;
     private int  _activeTab = 0;
+    private bool _diffSidebarCollapsed;
+    private bool _analysisSidebarCollapsed;
     private (int fileIndex, int? lineFrom, int? lineTo)? _pendingFocus;
 
     protected override void OnInitialized()

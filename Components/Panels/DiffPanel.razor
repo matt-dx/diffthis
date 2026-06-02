@@ -10,7 +10,13 @@
     <div class="diff-layout" @onclick="CloseContextMenu">
 
         <!-- File sidebar -->
-        <aside class="file-sidebar">
+        <aside class="file-sidebar @(SidebarCollapsed ? "sidebar-collapsed" : "")">
+            <div class="sidebar-toggle">
+                <button class="sidebar-toggle-btn" title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        @onclick:stopPropagation @onclick="() => SidebarCollapsedChanged.InvokeAsync(!SidebarCollapsed)">
+                    @(SidebarCollapsed ? "›" : "‹")
+                </button>
+            </div>
             <div class="sidebar-heading">Changed Files</div>
             @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
             {
@@ -175,6 +181,9 @@
     [Parameter] public DiffResult? Diff { get; set; }
     [Parameter] public (int fileIndex, int? lineFrom, int? lineTo)? PendingFocus { get; set; }
     [Parameter] public EventCallback PendingFocusConsumed { get; set; }
+
+    [Parameter] public bool SidebarCollapsed { get; set; }
+    [Parameter] public EventCallback<bool> SidebarCollapsedChanged { get; set; }
 
     private int _selectedIndex = -1;
     private Dictionary<int, List<string>> _highlighted = [];

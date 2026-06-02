@@ -65,6 +65,13 @@ public class GitService : IGitService
     {
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
+        var remoteResult = await Cli.Wrap("git")
+            .WithArguments(["remote", "get-url", "origin"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var remoteUri = remoteResult.ExitCode == 0 ? remoteResult.StandardOutput.Trim() : string.Empty;
+
         var statResult = await Cli.Wrap("git")
             .WithArguments(["diff", "--numstat", $"{baseBranch}..{compareBranch}"])
             .WithWorkingDirectory(repositoryPath)
@@ -96,6 +103,7 @@ public class GitService : IGitService
         {
             RepositoryPath = repositoryPath,
             RepositoryName = repoName,
+            RemoteUri = remoteUri,
             BaseBranch = baseBranch,
             CompareBranch = compareBranch,
             Files = files

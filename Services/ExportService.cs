@@ -12,6 +12,8 @@ public class ExportService : IExportService
         sb.AppendLine();
         sb.AppendLine($"**Comparing:** `{diff.BaseDisplay}` → `{diff.CompareDisplay}`");
         sb.AppendLine($"**Repository:** {diff.RepositoryPath}");
+        if (diff.RemoteUri.Length > 0)
+            sb.AppendLine($"**Remote:** {diff.RemoteUri}");
         sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
         sb.AppendLine("## Diff");

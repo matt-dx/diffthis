@@ -60,7 +60,13 @@ else
     <div class="diff-layout @(Settings.FontLigatures ? "ligatures" : "")">
 
         <!-- Sidebar -->
-        <aside class="file-sidebar">
+        <aside class="file-sidebar @(SidebarCollapsed ? "sidebar-collapsed" : "")">
+            <div class="sidebar-toggle">
+                <button class="sidebar-toggle-btn" title="@(SidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")"
+                        @onclick:stopPropagation @onclick="() => SidebarCollapsedChanged.InvokeAsync(!SidebarCollapsed)">
+                    @(SidebarCollapsed ? "›" : "‹")
+                </button>
+            </div>
 
             <div class="sidebar-heading">Context</div>
             @foreach (var (runKey, sideIdx) in explainItems.Select((k, i) => (k, i)))
@@ -251,6 +257,9 @@ else
 
 @code {
     [Parameter] public DiffResult? Diff { get; set; }
+
+    [Parameter] public bool SidebarCollapsed { get; set; }
+    [Parameter] public EventCallback<bool> SidebarCollapsedChanged { get; set; }
 
     private string?                               _selectedFeature;
     private AiRunKey?                             _selectedKey;

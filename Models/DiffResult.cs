@@ -4,6 +4,7 @@ public class DiffResult
 {
     public string RepositoryPath { get; set; } = string.Empty;
     public string RepositoryName { get; set; } = string.Empty;
+    public string RemoteUri { get; set; } = string.Empty;
     public string BaseBranch { get; set; } = string.Empty;
     public string CompareBranch { get; set; } = string.Empty;
 
