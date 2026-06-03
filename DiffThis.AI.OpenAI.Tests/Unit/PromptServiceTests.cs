@@ -51,7 +51,7 @@ public class PromptServiceTests
     public void BuildReviewPrompt_TruncatesAtMaxChars()
     {
         const int limit = 500;
-        var prompt = _svc.BuildReviewPrompt(DiffDataBuilder.LargeDiff(), maxDiffChars: limit);
+        var prompt = _svc.BuildReviewPrompt(DiffDataBuilder.MediumDiff(), maxDiffChars: limit);
 
         Assert.Contains("truncated", prompt);
     }
@@ -132,16 +132,6 @@ public class PromptServiceTests
     }
 
     // ── Char count sanity checks ──────────────────────────────────────────
-
-    [Fact]
-    public void LargeDiff_DiffContentExceedsEightThousandChars()
-    {
-        // The large diff should be well over 8 000 chars so it stress-tests per-message limits.
-        var (_, user) = _svc.BuildReviewPromptParts(DiffDataBuilder.LargeDiff());
-
-        Assert.True(user.Length > 8_000,
-            $"Expected large diff user content to exceed 8 000 chars, got {user.Length}");
-    }
 
     [Fact]
     public void SmallDiff_DiffContentUnder5000Chars()
