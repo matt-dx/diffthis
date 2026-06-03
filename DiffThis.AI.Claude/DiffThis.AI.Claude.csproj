@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows10.0.19041.0</TargetFrameworks>
+    <RootNamespace>DiffThis.AI.Claude</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DiffThis.AI.Shared\DiffThis.AI.Shared.csproj" />
+    <ProjectReference Include="..\DiffThis.Core\DiffThis.Core.csproj" />
+  </ItemGroup>
+</Project>
