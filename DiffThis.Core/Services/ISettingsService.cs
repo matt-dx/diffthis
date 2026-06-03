@@ -19,6 +19,9 @@ public interface ISettingsService
     string  PreferredExplainModel { get; set; }  // last-used model for Context runs
     string  PreferredReviewModel  { get; set; }  // last-used model for Code Review runs
 
+    // ── Diff options ───────────────────────────────────────────────────────
+    int DiffContextLines { get; set; }     // lines of context per hunk: 3/10/25/50 (default: 3)
+
     // ── MainView layout ────────────────────────────────────────────────────
     bool MainViewSideBySide { get; set; }  // default: false (tabbed)
 

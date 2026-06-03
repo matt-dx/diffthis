@@ -338,6 +338,24 @@
     }
 
     <section class="settings-section">
+        <p class="section-title">Diff</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Context lines</p>
+                    <p class="setting-desc">Lines of surrounding context shown per changed hunk. More context gives the AI more to work with for code review, at the cost of longer diffs. Changing this setting will require a fresh AI run — existing cached results use the context depth they were generated with.</p>
+                </div>
+                <select class="select-sm" @bind="diffContextLines" @bind:after="SaveDiffContextLines">
+                    <option value="3">3 — minimal</option>
+                    <option value="10">10 — standard</option>
+                    <option value="25">25 — extended</option>
+                    <option value="50">50 — full</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <p class="section-title">Unsupported Features</p>
         <div class="setting-card">
             <div class="setting-row">
@@ -376,6 +394,7 @@
 
     private int  maxRecent;
     private bool fontLigatures;
+    private int  diffContextLines;
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
@@ -390,6 +409,7 @@
         _returnUrl            = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
         maxRecent             = Svc.MaxRecentRepositories;
         fontLigatures         = Svc.FontLigatures;
+        diffContextLines      = Svc.DiffContextLines;
         aiToolsEnabled        = Svc.AiToolsEnabled;
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
@@ -424,6 +444,7 @@
     private void SaveFontLigatures() =>
         Svc.FontLigatures = fontLigatures;
 
+    private void SaveDiffContextLines() => Svc.DiffContextLines = diffContextLines;
     private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
     private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
     private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;

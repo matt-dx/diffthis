@@ -27,6 +27,9 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         RegexOptions.None)]
     private static partial Regex FileRefRegex();
 
+    [GeneratedRegex(@"\b(critical|high|medium|low)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SeverityKeywordRegex();
+
     // Matches a file reference with a known source-code extension inside <code> content.
     // Restricted to real extensions to avoid false positives like changedFields.add or e.Value.
     [GeneratedRegex(
@@ -64,8 +67,18 @@ public partial class AnalysisLinkService : IAnalysisLinkService
 
                 var from = r.LineFrom.Value;
                 var to   = r.LineTo ?? from;
+
+                // Skip the entire ref if the start line isn't in the diff — it's hallucinated.
+                if (!LineIsInDiff(from, diff.Files[fileIdx])) continue;
+
+                // Skip refs whose range exceeds a reasonable bound; a legitimate finding
+                // rarely spans more than a few hundred lines in a single hunk.
+                if (to - from > 500) continue;
+
                 for (var ln = from; ln <= to; ln++)
                 {
+                    if (!LineIsInDiff(ln, diff.Files[fileIdx])) continue;
+
                     var key = (fileIdx, ln);
                     if (!index.TryGetValue(key, out var list))
                         index[key] = list = [];
@@ -162,7 +175,8 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 var dedupKey = $"{rawPath}:{lineFrom}-{lineTo}:{(int)category}:{runKey.Model}";
                 if (!seen.Add(dedupKey)) continue;
 
-                refs.Add(new AnalysisRef(runKey, rawPath, lineFrom, lineTo, category));
+                var severity = DetectSeverity(body, m.Index, category);
+                refs.Add(new AnalysisRef(runKey, rawPath, lineFrom, lineTo, category, severity));
             }
         }
         return refs;
@@ -195,13 +209,73 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         return result;
     }
 
+    // Scan ±200 chars around the ref for a severity keyword. The model may place the
+    // label before the ref ("**critical** — `File.cs:42`") or after it
+    // ("`File.cs:42` — **critical**"), so we check both sides and pick the nearest match.
+    // Falls back to a category-based default if none found.
+    private static RefSeverity DetectSeverity(string body, int refIndex, RefCategory category)
+    {
+        var winStart = Math.Max(0, refIndex - 200);
+        var winEnd   = Math.Min(body.Length, refIndex + 200);
+        var window   = body[winStart..winEnd];
+        // refIndex within the window
+        var localRef = refIndex - winStart;
+
+        // Find the match whose end is closest to localRef (prefer the nearest label).
+        Match? best     = null;
+        var    bestDist = int.MaxValue;
+        foreach (Match m in SeverityKeywordRegex().Matches(window))
+        {
+            var dist = Math.Abs(m.Index + m.Length / 2 - localRef);
+            if (dist < bestDist) { bestDist = dist; best = m; }
+        }
+
+        if (best is not null)
+        {
+            return best.Value.ToLowerInvariant() switch
+            {
+                "critical" => RefSeverity.Critical,
+                "high"     => RefSeverity.High,
+                "medium"   => RefSeverity.Medium,
+                _          => RefSeverity.Low,   // only remaining match is "low"
+            };
+        }
+
+        // Category-based fallback
+        return category switch
+        {
+            RefCategory.Security        => RefSeverity.High,
+            RefCategory.Bug             => RefSeverity.High,
+            RefCategory.LogicError      => RefSeverity.Medium,
+            RefCategory.Performance     => RefSeverity.Medium,
+            RefCategory.Maintainability => RefSeverity.Low,
+            _                           => RefSeverity.Low,
+        };
+    }
+
     private static RefCategory ClassifyHeading(string heading)
     {
         var h = heading.ToLowerInvariant();
-        if (h.Contains("bug"))      return RefCategory.Bug;
-        if (h.Contains("logic"))    return RefCategory.LogicError;
-        if (h.Contains("security")) return RefCategory.Security;
+        if (h.Contains("bug"))            return RefCategory.Bug;
+        if (h.Contains("logic"))          return RefCategory.LogicError;
+        if (h.Contains("security"))       return RefCategory.Security;
+        if (h.Contains("performance"))    return RefCategory.Performance;
+        if (h.Contains("maintainability") || h.Contains("maintainance")) return RefCategory.Maintainability;
         return RefCategory.Other;
+    }
+
+    // Returns true if the line number falls within any hunk on either the old or new side.
+    // Checking both sides avoids treating references to deleted lines as hallucinations.
+    private static bool LineIsInDiff(int lineNum, DiffFile file)
+    {
+        foreach (var hunk in file.Hunks)
+        {
+            if (lineNum >= hunk.NewStart && lineNum < hunk.NewStart + hunk.NewCount)
+                return true;
+            if (lineNum >= hunk.OldStart && lineNum < hunk.OldStart + hunk.OldCount)
+                return true;
+        }
+        return false;
     }
 
     private static bool LooksLikeFilePath(string s)

@@ -10,6 +10,8 @@ Built on **.NET MAUI + Blazor Hybrid** targeting `net10.0-windows10.0.19041.0`.
 - Syntax-highlighted unified diff with collapsible file sections
 - AI review and explanation via **Claude** (Claude Code CLI) or **GitHub Copilot**
 - Analysis link navigation — AI references to `File.cs:42` are clickable and scroll the diff to that line
+- Severity-aware analysis indicators — findings are tagged critical/high/medium/low and displayed with matching intensity
+- Configurable diff context depth (3 / 10 / 25 / 50 lines per hunk) for richer AI context
 - Markdown export of the full diff
 - Per-repo branch selection memory, light/dark theme, font ligature toggle
 
@@ -86,6 +88,23 @@ Calls the GitHub Copilot chat completions API directly. Sign in with your GitHub
 ## AI Prompts
 
 Custom prompt templates can be placed at `%LOCALAPPDATA%\DiffThis\prompts\review.md` or `explain.md`. Use `{{Variable}}` placeholders — the built-in templates in `DiffThis.AI.Shared/Prompts/` show available variables.
+
+Available placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `{{RepositoryName}}` | Repo folder name |
+| `{{BaseDisplay}}` | Human-readable base ref label |
+| `{{CompareDisplay}}` | Human-readable compare ref label |
+| `{{FileCount}}` | Number of files changed |
+| `{{Additions}}` | Total lines added |
+| `{{Deletions}}` | Total lines deleted |
+| `{{FileList}}` | Changed files with status and detected language |
+| `{{DiffContent}}` | Full unified diff (truncated at 60 k chars) |
+
+## Diff Context Depth
+
+The number of context lines shown per hunk (equivalent to `git diff --unified=N`) is configurable from Settings → Diff → Context lines. Options: 3 (minimal, default), 10 (standard), 25 (extended), 50 (full). More context lines give the AI more surrounding code to reason about, at the cost of longer diffs and higher token usage.
 
 ## AI Result Caching
 

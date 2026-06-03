@@ -240,7 +240,8 @@ public class CopilotModelService : ICopilotModelService
             && !lower.Contains("davinci")
             && !lower.Contains("babbage")
             && !lower.Contains("ada")
-            && !lower.Contains("codex");   // completion models, not chat
+            && !lower.Contains("codex")     // completion models, not chat
+            && !lower.Contains("trajectory-compaction"); // internal Copilot context-compression model
     }
 
     // ── Name inference ────────────────────────────────────────────────────

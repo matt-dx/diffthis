@@ -67,6 +67,7 @@ public class PromptService
             .Replace("{{FileCount}}", diff.Files.Count.ToString())
             .Replace("{{Additions}}", diff.TotalAdditions.ToString())
             .Replace("{{Deletions}}", diff.TotalDeletions.ToString())
+            .Replace("{{FileList}}", BuildFileList(diff))
             .Replace("{{DiffContent}}", diffContent);
     }
 
@@ -90,9 +91,76 @@ public class PromptService
             .Replace("{{FileCount}}", diff.Files.Count.ToString())
             .Replace("{{Additions}}", diff.TotalAdditions.ToString())
             .Replace("{{Deletions}}", diff.TotalDeletions.ToString())
+            .Replace("{{FileList}}", BuildFileList(diff))
             .TrimEnd();
 
         return (system, diffContent);
+    }
+
+    private static string BuildFileList(DiffResult diff)
+    {
+        var sb = new StringBuilder();
+        foreach (var file in diff.Files)
+        {
+            var status = file.Status switch
+            {
+                DiffFileStatus.Added   => "added",
+                DiffFileStatus.Deleted => "deleted",
+                DiffFileStatus.Renamed => "renamed",
+                DiffFileStatus.Copied  => "copied",
+                _                      => "modified",
+            };
+            var lang = DetectLanguage(file.DisplayPath);
+            sb.AppendLine($"- {file.DisplayPath} ({status}{(lang.Length > 0 ? $", {lang}" : "")})");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string DetectLanguage(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext switch
+        {
+            ".cs"         => "C#",
+            ".fs" or ".fsx" => "F#",
+            ".vb"         => "VB.NET",
+            ".ts" or ".tsx" => "TypeScript",
+            ".js" or ".jsx" => "JavaScript",
+            ".py"         => "Python",
+            ".go"         => "Go",
+            ".rs"         => "Rust",
+            ".java"       => "Java",
+            ".kt" or ".kts" => "Kotlin",
+            ".swift"      => "Swift",
+            ".cpp" or ".cc" or ".cxx" => "C++",
+            ".c"          => "C",
+            ".h" or ".hpp" => "C/C++ header",
+            ".rb"         => "Ruby",
+            ".php"        => "PHP",
+            ".ex" or ".exs" => "Elixir",
+            ".dart"       => "Dart",
+            ".lua"        => "Lua",
+            ".r"          => "R",            // also Rebol; R is far more common in practice
+            ".m"          => "Objective-C",  // also MATLAB/Mathematica; Objective-C wins in iOS/macOS repos
+            ".html" or ".htm" => "HTML",
+            ".css"        => "CSS",
+            ".scss" or ".sass" => "SCSS",
+            ".less"       => "Less",
+            ".vue"        => "Vue",
+            ".razor"      => "Razor",
+            ".json"       => "JSON",
+            ".yaml" or ".yml" => "YAML",
+            ".toml"       => "TOML",
+            ".xml"        => "XML",
+            ".sql"        => "SQL",
+            ".sh" or ".bash" => "Shell",
+            ".ps1" or ".psm1" => "PowerShell",
+            ".tf" or ".tfvars" => "Terraform",
+            ".proto"      => "Protocol Buffers",
+            ".graphql" or ".gql" => "GraphQL",
+            ".md" or ".mdx" => "Markdown",
+            _             => "",
+        };
     }
 
     private static string BuildDiffContent(DiffResult diff, int maxChars)

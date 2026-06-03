@@ -309,6 +309,7 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--fg-muted);
   padding: 10px 12px 4px;
+  display: flex; align-items: center; justify-content: space-between;
   transition: opacity 0.12s;
 }
 
@@ -633,6 +634,12 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .icon-ref-bubble         { color: var(--fg-secondary); }
 .icon-ref-multi          { color: var(--primary); opacity: 0.8; }
 
+/* Severity modifiers — tint opacity to signal importance */
+.severity-critical { opacity: 1 !important; filter: brightness(1.25); }
+.severity-high     { opacity: 0.9 !important; }
+.severity-medium   { opacity: 0.7 !important; }
+.severity-low      { opacity: 0.45 !important; }
+
 /* Clickable file refs in analysis markdown (span, not a, to avoid MAUI router intercept) */
 .analysis-ref {
   cursor: pointer; text-decoration: underline dotted;
@@ -661,11 +668,13 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-ref-icon:hover { opacity: 1; }
 
 /* ── Analysis result cards ───────────────────────────────────────────── */
-.claude-badge {
+.claude-badge, .copilot-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; flex-shrink: 0; color: #e07b39;
+  width: 20px; height: 20px; flex-shrink: 0;
 }
-.claude-badge .icon { width: 16px; height: 16px; }
+.claude-badge  { color: #e07b39; }
+.copilot-badge { color: #8534F3; }
+.claude-badge .icon, .copilot-badge .icon { width: 16px; height: 16px; }
 
 .analysis-feature-badge {
   display: inline-block; padding: 1px 7px; border-radius: 3px;
