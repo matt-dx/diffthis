@@ -88,6 +88,9 @@ public class CopilotService : ICopilotService
                     if (responseBody.Contains("tokens_limit_reached"))
                         throw new InvalidOperationException(
                             $"Diff is too large for \"{modelId}\".");
+                    if (responseBody.Contains("unsupported_api_for_model"))
+                        throw new InvalidOperationException(
+                            $"\"{modelId}\" does not support chat completions and cannot be used for diff analysis.");
                     throw new InvalidOperationException(
                         $"GitHub Copilot {(int)resp.StatusCode}: {responseBody}");
             }

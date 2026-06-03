@@ -98,13 +98,24 @@ public class CopilotModelService : ICopilotModelService
                 var fetched = array.EnumerateArray()
                     .Select(e =>
                     {
-                        var rawId        = e.TryGetProperty("id",           out var i) ? i.GetString() ?? "" : "";
+                        var rawId        = e.TryGetProperty("id",            out var i) ? i.GetString() ?? "" : "";
                         var friendlyName = e.TryGetProperty("friendly_name", out var f) ? f.GetString() : null;
                         var name         = e.TryGetProperty("name",          out var n) ? n.GetString() : null;
                         var cleanId      = ExtractModelId(rawId);
-                        return (id: cleanId, display: friendlyName ?? name ?? InferName(cleanId));
+
+                        // capabilities.type identifies whether the model supports chat.
+                        // Only "chat" models can be used with /chat/completions.
+                        string? capType = null;
+                        if (e.TryGetProperty("capabilities", out var caps)
+                            && caps.TryGetProperty("type", out var typeEl))
+                            capType = typeEl.GetString();
+
+                        return (id: cleanId, display: friendlyName ?? name ?? InferName(cleanId), capType);
                     })
-                    .Where(x => !string.IsNullOrEmpty(x.id) && IsChatModel(x.id))
+                    .Where(x => !string.IsNullOrEmpty(x.id)
+                                && IsChatModel(x.id)
+                                && IsChatCapability(x.capType))
+                    .Select(x => (x.id, x.display))
                     .ToList();
 
                 if (fetched.Count > 0)
@@ -211,7 +222,14 @@ public class CopilotModelService : ICopilotModelService
         return end < 0 ? rawId[start..] : rawId[start..end];
     }
 
-    // Keep only chat/generation models — drop embeddings, TTS, image gen, etc.
+    // Primary filter: capabilities.type from the API response.
+    // Absent = field not returned by this endpoint version; treat as allowed so
+    // we don't silently drop every model if GitHub changes the schema.
+    private static bool IsChatCapability(string? capType) =>
+        capType is null or "chat";
+
+    // Secondary name-based filter: drop models that are clearly not chat models
+    // even when the API doesn't return capability metadata.
     private static bool IsChatModel(string modelId)
     {
         var lower = modelId.ToLowerInvariant();
@@ -222,7 +240,8 @@ public class CopilotModelService : ICopilotModelService
             && !lower.Contains("dall-e")
             && !lower.Contains("davinci")
             && !lower.Contains("babbage")
-            && !lower.Contains("ada");
+            && !lower.Contains("ada")
+            && !lower.Contains("codex");   // completion models, not chat
     }
 
     // ── Name inference ────────────────────────────────────────────────────
