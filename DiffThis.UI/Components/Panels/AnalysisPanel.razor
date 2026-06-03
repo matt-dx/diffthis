@@ -95,7 +95,7 @@ else
                 var isActive  = _selectedFeature == "explain" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("explain", k, dispIdx)'>
-                    <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                    <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
                         <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
@@ -132,7 +132,7 @@ else
                 var isActive  = _selectedFeature == "review" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("review", k, dispIdx)'>
-                    <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                    <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
                         <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
@@ -182,7 +182,7 @@ else
 
                 <div class="diff-file diff-file-@feat @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
                     <div class="file-header">
-                        <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                        <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                         <span class="file-path">
                             <strong>@GetAiDisplayName(k.Model)</strong>
                         </span>
@@ -376,8 +376,14 @@ else
         _pendingDeleteKey = null;
     }
 
+    private static bool IsCopilot(string modelKey) =>
+        modelKey.StartsWith("copilot:", StringComparison.Ordinal);
+
     private static string ProviderIconClass(string modelKey) =>
-        modelKey.StartsWith("copilot:", StringComparison.Ordinal) ? "icon-copilot" : "icon-claude";
+        IsCopilot(modelKey) ? "icon-copilot" : "icon-claude";
+
+    private static string ProviderBadgeClass(string modelKey) =>
+        IsCopilot(modelKey) ? "copilot-badge" : "claude-badge";
 
     private string GetAiDisplayName(string modelKey) =>
         modelKey.StartsWith("copilot:", StringComparison.Ordinal)
