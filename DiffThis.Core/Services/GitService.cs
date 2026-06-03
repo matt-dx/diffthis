@@ -73,7 +73,7 @@ public class GitService : IGitService
 
     public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default, int contextLines = 3)
     {
-        contextLines = Math.Clamp(contextLines, 0, 200);
+        contextLines = Math.Clamp(contextLines, 0, 200); // >200 lines of context produces diffs that blow past the AI prompt size limit
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
         var remoteResult = await Cli.Wrap("git")

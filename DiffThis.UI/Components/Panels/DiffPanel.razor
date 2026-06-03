@@ -80,7 +80,7 @@
                         </span>
                         @if (fileRefs.Count > 0)
                         {
-                            <!-- Show one icon per unique Category across all visible refs for this file -->
+                            <!-- Show one icon per unique Category; MinBy picks lowest int value = highest severity (Critical=0) -->
                             <div class="file-header-refs">
                                 @foreach (var r in fileRefs.GroupBy(r => r.Category).Select(g => g.MinBy(x => (int)x.Severity)))
                                 {
@@ -310,10 +310,12 @@
 
     private static string RefIconClass(RefCategory c) => c switch
     {
-        RefCategory.Bug        => "icon icon-ref-bug",
-        RefCategory.LogicError => "icon icon-ref-knight",
-        RefCategory.Security   => "icon icon-ref-shield-cracked",
-        _                      => "icon icon-ref-bubble",
+        RefCategory.Bug             => "icon icon-ref-bug",
+        RefCategory.LogicError      => "icon icon-ref-knight",
+        RefCategory.Security        => "icon icon-ref-shield-cracked",
+        RefCategory.Performance     => "icon icon-ref-bubble",
+        RefCategory.Maintainability => "icon icon-ref-bubble",
+        _                           => "icon icon-ref-bubble",
     };
 
     private static string SeverityCss(RefSeverity s) => s switch

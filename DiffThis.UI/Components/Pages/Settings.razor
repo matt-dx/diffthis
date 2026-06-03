@@ -343,7 +343,7 @@
             <div class="setting-row">
                 <div>
                     <p class="setting-label">Context lines</p>
-                    <p class="setting-desc">Lines of surrounding context shown per changed hunk. More context gives the AI more to work with for code review, at the cost of longer diffs.</p>
+                    <p class="setting-desc">Lines of surrounding context shown per changed hunk. More context gives the AI more to work with for code review, at the cost of longer diffs. Changing this setting will require a fresh AI run — existing cached results use the context depth they were generated with.</p>
                 </div>
                 <select class="select-sm" @bind="diffContextLines" @bind:after="SaveDiffContextLines">
                     <option value="3">3 — minimal</option>

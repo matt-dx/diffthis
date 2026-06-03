@@ -104,7 +104,8 @@ public class AiCacheService
 
         // New format: ...feature|model|{T/N}{turns}|c{contextLines}
         // Old format: ...feature|model|{T/N}{turns}  (no context segment)
-        var hasContext = parts.Length >= 7 && parts[^1].StartsWith('c');
+        // Context segment matches exactly "c" followed by one or more digits.
+        var hasContext = parts.Length >= 7 && System.Text.RegularExpressions.Regex.IsMatch(parts[^1], @"^c\d+$");
         var cfg        = hasContext ? parts[^2] : parts[^1];  // e.g. "T5" or "N0"
         var model      = hasContext ? parts[^3] : parts[^2];
         var feature    = hasContext ? parts[^4] : parts[^3];

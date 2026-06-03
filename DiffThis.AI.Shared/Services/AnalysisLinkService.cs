@@ -66,13 +66,17 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 if (fileIdx < 0) continue;
 
                 var from = r.LineFrom.Value;
-                // Cap range iteration so a hallucinated end-line can't cause O(N×hunks) work.
-                var to   = Math.Min(r.LineTo ?? from, from + 500);
+                var to   = r.LineTo ?? from;
+
+                // Skip the entire ref if the start line isn't in the diff — it's hallucinated.
+                if (!LineIsInDiff(from, diff.Files[fileIdx])) continue;
+
+                // Skip refs whose range exceeds a reasonable bound; a legitimate finding
+                // rarely spans more than a few hundred lines in a single hunk.
+                if (to - from > 500) continue;
+
                 for (var ln = from; ln <= to; ln++)
                 {
-                    // Skip individual lines that fall outside every hunk range.
-                    // Checking per-line (not just LineFrom) prevents a range with a valid
-                    // start but an out-of-hunk end from ballooning the index.
                     if (!LineIsInDiff(ln, diff.Files[fileIdx])) continue;
 
                     var key = (fileIdx, ln);
@@ -240,19 +244,23 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         // Category-based fallback
         return category switch
         {
-            RefCategory.Security   => RefSeverity.High,
-            RefCategory.Bug        => RefSeverity.High,
-            RefCategory.LogicError => RefSeverity.Medium,
-            _                      => RefSeverity.Low,
+            RefCategory.Security        => RefSeverity.High,
+            RefCategory.Bug             => RefSeverity.High,
+            RefCategory.LogicError      => RefSeverity.Medium,
+            RefCategory.Performance     => RefSeverity.Medium,
+            RefCategory.Maintainability => RefSeverity.Low,
+            _                           => RefSeverity.Low,
         };
     }
 
     private static RefCategory ClassifyHeading(string heading)
     {
         var h = heading.ToLowerInvariant();
-        if (h.Contains("bug"))      return RefCategory.Bug;
-        if (h.Contains("logic"))    return RefCategory.LogicError;
-        if (h.Contains("security")) return RefCategory.Security;
+        if (h.Contains("bug"))            return RefCategory.Bug;
+        if (h.Contains("logic"))          return RefCategory.LogicError;
+        if (h.Contains("security"))       return RefCategory.Security;
+        if (h.Contains("performance"))    return RefCategory.Performance;
+        if (h.Contains("maintainability") || h.Contains("maintainance")) return RefCategory.Maintainability;
         return RefCategory.Other;
     }
 
