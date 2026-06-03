@@ -79,11 +79,14 @@ public class AiCacheService
     public Dictionary<AiRunKey, AiCacheEntry> GetAll(string repoPath, string baseRef, string compareRef)
     {
         var prefix = $"{Esc(repoPath)}|{Esc(baseRef)}|{Esc(compareRef)}|";
+        // Group by parsed key in case old-format entries (no context-lines segment) and
+        // new-format entries parse to the same AiRunKey; keep the most recently cached.
         return _cache
             .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+            .GroupBy(kv => ParseRunKey(kv.Key))
             .ToDictionary(
-                kv => ParseRunKey(kv.Key),
-                kv => kv.Value);
+                g => g.Key,
+                g => g.OrderByDescending(kv => kv.Value.CachedAt).First().Value);
     }
 
     // ── Key encoding ──────────────────────────────────────────────────────
