@@ -27,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.AI.Inference" Version="1.0.0-beta.5" />
     <PackageReference Include="ColorCode.HTML" Version="2.0.15" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.*" />

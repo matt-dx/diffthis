@@ -41,6 +41,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<IClaudeService, ClaudeService>();
         builder.Services.AddSingleton<AiCacheService>();
         builder.Services.AddSingleton<IAnalysisLinkService, AnalysisLinkService>();
+        builder.Services.AddSingleton<ICopilotAuthService, CopilotAuthService>();
+        builder.Services.AddSingleton<ICopilotModelService, CopilotModelService>();
+        builder.Services.AddSingleton<ICopilotService, CopilotService>();
 
         builder.Services.AddSingleton<MainPage>();
 

@@ -1,0 +1,53 @@
+@* Custom model selector with provider icon in trigger and each option. *@
+
+<div class="model-dropdown">
+    @if (_open)
+    {
+        <div class="model-dropdown-backdrop" @onclick="Close"></div>
+    }
+    <button class="model-dropdown-trigger" type="button" @onclick="Toggle" disabled="@(!Options.Any())">
+        @if (!string.IsNullOrEmpty(Value))
+        {
+            <span class="icon @IconClass(Value)" style="width:14px;height:14px"></span>
+        }
+        <span class="model-dropdown-name">@(SelectedName ?? "—")</span>
+        <span class="model-dropdown-chevron">▾</span>
+    </button>
+    @if (_open && Options.Any())
+    {
+        <div class="model-dropdown-menu">
+            @foreach (var m in Options)
+            {
+                var captured = m;
+                <div class="model-dropdown-option @(m.Key == Value ? "selected" : "")"
+                     @onclick="() => Select(captured)">
+                    <span class="icon @IconClass(m.Key)" style="width:14px;height:14px"></span>
+                    <span class="model-dropdown-option-name">@m.DisplayName</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<AiModel> Options { get; set; } = [];
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private bool _open;
+
+    private string? SelectedName =>
+        Options.FirstOrDefault(m => m.Key == Value)?.DisplayName;
+
+    private static string IconClass(string key) =>
+        key.StartsWith("copilot:", StringComparison.Ordinal) ? "icon-copilot" : "icon-claude";
+
+    private void Toggle() => _open = !_open;
+    private void Close()  => _open = false;
+
+    private async Task Select(AiModel m)
+    {
+        _open = false;
+        await ValueChanged.InvokeAsync(m.Key);
+    }
+}

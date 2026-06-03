@@ -19,11 +19,11 @@ public class PromptService
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                      "DiffThis", "prompts");
 
-    public string BuildReviewPrompt(DiffResult diff)
-        => Render(LoadTemplate("review"), diff);
+    public string BuildReviewPrompt(DiffResult diff, int maxDiffChars = 60_000)
+        => Render(LoadTemplate("review"), diff, maxDiffChars);
 
-    public string BuildExplainPrompt(DiffResult diff)
-        => Render(LoadTemplate("explain"), diff);
+    public string BuildExplainPrompt(DiffResult diff, int maxDiffChars = 60_000)
+        => Render(LoadTemplate("explain"), diff, maxDiffChars);
 
     // ── Template loading ──────────────────────────────────────────────────
 
@@ -42,9 +42,9 @@ public class PromptService
 
     // ── Rendering ─────────────────────────────────────────────────────────
 
-    private static string Render(string template, DiffResult diff)
+    private static string Render(string template, DiffResult diff, int maxDiffChars)
     {
-        var diffContent = BuildDiffContent(diff);
+        var diffContent = BuildDiffContent(diff, maxDiffChars);
         return template
             .Replace("{{RepositoryName}}", diff.RepositoryName)
             .Replace("{{BaseDisplay}}", diff.BaseDisplay)
@@ -55,9 +55,8 @@ public class PromptService
             .Replace("{{DiffContent}}", diffContent);
     }
 
-    private static string BuildDiffContent(DiffResult diff)
+    private static string BuildDiffContent(DiffResult diff, int maxChars)
     {
-        const int maxChars = 60_000;
         var sb = new StringBuilder();
         var written = 0;
         var truncated = false;

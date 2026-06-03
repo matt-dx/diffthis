@@ -10,8 +10,10 @@ public class SettingsService : ISettingsService
     private const string RecentReposKey    = "recent_repos";
     private const string FontLigaturesKey  = "font_ligatures";
     private const string BranchStatesKey   = "branch_states";
-    private const string AiToolsKey           = "ai_tools_enabled";
-    private const string AiMaxTurnsKey        = "ai_max_turns";
+    private const string AiToolsKey               = "ai_tools_enabled";
+    private const string AiMaxTurnsKey            = "ai_max_turns";
+    private const string PreferredExplainModelKey = "preferred_explain_model";
+    private const string PreferredReviewModelKey  = "preferred_review_model";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string WindowXKey             = "window_x";
@@ -93,6 +95,18 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(AiMaxTurnsKey, 5);
         set => Preferences.Set(AiMaxTurnsKey, value);
+    }
+
+    public string PreferredExplainModel
+    {
+        get => Preferences.Get(PreferredExplainModelKey, "");
+        set => Preferences.Set(PreferredExplainModelKey, value);
+    }
+
+    public string PreferredReviewModel
+    {
+        get => Preferences.Get(PreferredReviewModelKey, "");
+        set => Preferences.Set(PreferredReviewModelKey, value);
     }
 
     public bool MainViewSideBySide

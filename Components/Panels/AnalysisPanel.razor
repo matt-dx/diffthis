@@ -1,10 +1,14 @@
 @inject IClaudeAuthService ClaudeAuth
 @inject IClaudeService Claude
 @inject IClaudeModelService ModelService
+@inject ICopilotAuthService CopilotAuth
+@inject ICopilotService Copilot
+@inject ICopilotModelService CopilotModelService
 @inject AiCacheService AiCache
 @inject IAnalysisLinkService LinkService
 @inject ISettingsService Settings
 @inject IJSRuntime JS
+@using DiffThis.Models
 @using Markdig
 @using System.Text.RegularExpressions
 @implements IAsyncDisposable
@@ -19,11 +23,13 @@
     var explainItems = allEntries
         .Where(kv => kv.Key.Feature == "explain").Select(kv => kv.Key)
         .Union(_runningKeys.Where(k => k.Feature == "explain"))
+        .Union(_erroredKeys.Where(k => k.Feature == "explain"))
         .OrderBy(k => allEntries.TryGetValue(k, out var e0) ? e0.CachedAt : DateTime.MaxValue)
         .ToList();
     var reviewItems = allEntries
         .Where(kv => kv.Key.Feature == "review").Select(kv => kv.Key)
         .Union(_runningKeys.Where(k => k.Feature == "review"))
+        .Union(_erroredKeys.Where(k => k.Feature == "review"))
         .OrderBy(k => allEntries.TryGetValue(k, out var e1) ? e1.CachedAt : DateTime.MaxValue)
         .ToList();
 
@@ -32,23 +38,41 @@
         .Concat(reviewItems.Select(k => (feature: "review", key: k)))
         .ToList();
 
+    // Estimate diff size to filter out GitHub Models that can't handle it.
+    var diffChars = diff is not null
+        ? diff.Files.Sum(f => f.Hunks.Sum(h => h.Lines.Sum(l => l.Content.Length + 3)))
+        : 0;
+
+    var copilotFits   = CopilotModelService.VisibleModels
+        .Where(m => diffChars <= CopilotModelService.GetEffectiveDiffCharLimit(m.Id)).ToList();
+    var copilotHidden = CopilotModelService.VisibleModels.Count - copilotFits.Count;
+
+    // Combined model list: Claude first, then Copilot (keyed with "copilot:" prefix)
+    var allModels = ModelService.VisibleModels
+        .Select(m => new AiModel(m.Id, m.Id, m.DisplayName, AiProvider.Claude))
+        .Concat(copilotFits
+            .Select(m => new AiModel($"copilot:{m.Id}", m.Id, m.DisplayName, AiProvider.Copilot)))
+        .ToList();
+
     // Add-dropdown: exclude models already present (cached or in-flight)
     var takenExplain     = explainItems.Select(k => k.Model).ToHashSet();
     var takenReview      = reviewItems.Select(k => k.Model).ToHashSet();
-    var availableExplain = ModelService.VisibleModels.Where(m => !takenExplain.Contains(m.Id)).ToList();
-    var availableReview  = ModelService.VisibleModels.Where(m => !takenReview.Contains(m.Id)).ToList();
+    var availableExplain = allModels.Where(m => !takenExplain.Contains(m.Key)).ToList();
+    var availableReview  = allModels.Where(m => !takenReview.Contains(m.Key)).ToList();
 
-    var explainAdd = availableExplain.Any(m => m.Id == _explainAddModel)
-        ? _explainAddModel : availableExplain.FirstOrDefault()?.Id ?? "";
-    var reviewAdd = availableReview.Any(m => m.Id == _reviewAddModel)
-        ? _reviewAddModel : availableReview.FirstOrDefault()?.Id ?? "";
+    var explainAdd = availableExplain.Any(m => m.Key == _explainAddModel)
+        ? _explainAddModel : availableExplain.FirstOrDefault()?.Key ?? "";
+    var reviewAdd = availableReview.Any(m => m.Key == _reviewAddModel)
+        ? _reviewAddModel : availableReview.FirstOrDefault()?.Key ?? "";
 }
 
-@if (ClaudeAuth.State != ClaudeAuthState.Authenticated)
+@if (ClaudeAuth.State != ClaudeAuthState.Authenticated
+  && CopilotAuth.State != CopilotAuthState.Authenticated)
 {
     <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
-        <p>Sign in to Claude to use AI features.</p>
-        <p>Run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
+        <p>Sign in to an AI provider to use AI features.</p>
+        <p>For Claude: run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
+        <p>For GitHub Models: run <code>gh auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
     </div>
 }
 else if (diff is null)
@@ -81,9 +105,9 @@ else
                 var isActive  = _selectedFeature == "explain" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("explain", k, dispIdx)'>
-                    <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                    <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
-                        <span class="file-name">@ModelService.GetDisplayName(k.Model)</span>
+                        <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
                     @if (isRunning) { <span class="ai-busy-dot"></span> }
                     <button class="eye-btn" title="@(isHidden ? "Show" : "Hide")"
@@ -99,18 +123,18 @@ else
             @if (availableExplain.Count > 0)
             {
                 <div class="analysis-add-row">
-                    <select class="select-sm analysis-add-select"
-                            value="@explainAdd"
-                            @onchange='e => _explainAddModel = e.Value?.ToString() ?? explainAdd'>
-                        @foreach (var m in availableExplain)
-                        {
-                            <option value="@m.Id">@m.DisplayName</option>
-                        }
-                    </select>
+                    <ModelDropdown Options="availableExplain"
+                                   Value="@explainAdd"
+                                   ValueChanged="v => _explainAddModel = v" />
                     <button class="btn btn-sm analysis-add-btn"
                             disabled="@string.IsNullOrEmpty(explainAdd)"
                             @onclick='() => AddEntry("explain", explainAdd)'>+</button>
                 </div>
+            }
+
+            @if (copilotHidden > 0)
+            {
+                <p class="analysis-size-note">@copilotHidden GitHub model@(copilotHidden == 1 ? "" : "s") hidden — diff too large</p>
             }
 
             <div class="sidebar-heading analysis-section-heading">Code Review</div>
@@ -123,9 +147,9 @@ else
                 var isActive  = _selectedFeature == "review" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("review", k, dispIdx)'>
-                    <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                    <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
-                        <span class="file-name">@ModelService.GetDisplayName(k.Model)</span>
+                        <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
                     @if (isRunning) { <span class="ai-busy-dot"></span> }
                     <button class="eye-btn" title="@(isHidden ? "Show" : "Hide")"
@@ -141,14 +165,9 @@ else
             @if (availableReview.Count > 0)
             {
                 <div class="analysis-add-row">
-                    <select class="select-sm analysis-add-select"
-                            value="@reviewAdd"
-                            @onchange='e => _reviewAddModel = e.Value?.ToString() ?? reviewAdd'>
-                        @foreach (var m in availableReview)
-                        {
-                            <option value="@m.Id">@m.DisplayName</option>
-                        }
-                    </select>
+                    <ModelDropdown Options="availableReview"
+                                   Value="@reviewAdd"
+                                   ValueChanged="v => _reviewAddModel = v" />
                     <button class="btn btn-sm analysis-add-btn"
                             disabled="@string.IsNullOrEmpty(reviewAdd)"
                             @onclick='() => AddEntry("review", reviewAdd)'>+</button>
@@ -178,9 +197,9 @@ else
 
                 <div class="diff-file diff-file-@feat @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
                     <div class="file-header">
-                        <span class="claude-badge"><span class="icon icon-claude"></span></span>
+                        <span class="claude-badge"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                         <span class="file-path">
-                            <strong>@ModelService.GetDisplayName(k.Model)</strong>
+                            <strong>@GetAiDisplayName(k.Model)</strong>
                         </span>
                         <span class="analysis-feature-badge">@featureLabel</span>
                         @if (entry is not null)
@@ -245,7 +264,7 @@ else
             <div class="modal" @onclick:stopPropagation>
                 <p class="modal-title">Delete result?</p>
                 <p class="modal-body">
-                    The <strong>@ModelService.GetDisplayName(_pendingDeleteKey.Model)</strong>
+                    The <strong>@GetAiDisplayName(_pendingDeleteKey.Model)</strong>
                     (@(_pendingDeleteKey.Feature == "review" ? "Code Review" : "Context"))
                     cached result will be permanently deleted.
                 </p>
@@ -266,8 +285,9 @@ else
 
     private string?                               _selectedFeature;
     private AiRunKey?                             _selectedKey;
-    private readonly HashSet<AiRunKey>            _runningKeys = [];
-    private readonly Dictionary<AiRunKey, string> _errors      = [];
+    private readonly HashSet<AiRunKey>            _runningKeys  = [];
+    private readonly HashSet<AiRunKey>            _erroredKeys  = [];
+    private readonly Dictionary<AiRunKey, string> _errors       = [];
     private string    _explainAddModel  = "";
     private string    _reviewAddModel   = "";
     private AiRunKey? _pendingDeleteKey;
@@ -278,8 +298,9 @@ else
 
     protected override void OnInitialized()
     {
-        ModelService.ModelsChanged += OnModelsChanged;
-        LinkService.Changed        += OnLinksChanged;
+        ModelService.ModelsChanged        += OnModelsChanged;
+        CopilotModelService.ModelsChanged += OnModelsChanged;
+        LinkService.Changed               += OnLinksChanged;
         _dotNetRef = DotNetObjectReference.Create(this);
     }
 
@@ -290,9 +311,10 @@ else
         _selectedFeature  = null;
         _selectedKey      = null;
         _runningKeys.Clear();
+        _erroredKeys.Clear();
         _errors.Clear();
-        _explainAddModel  = "";
-        _reviewAddModel   = "";
+        _explainAddModel  = Settings.PreferredExplainModel;
+        _reviewAddModel   = Settings.PreferredReviewModel;
         _pendingDeleteKey = null;
 
         LinkService.Reset();
@@ -311,8 +333,9 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        ModelService.ModelsChanged -= OnModelsChanged;
-        LinkService.Changed        -= OnLinksChanged;
+        ModelService.ModelsChanged        -= OnModelsChanged;
+        CopilotModelService.ModelsChanged -= OnModelsChanged;
+        LinkService.Changed               -= OnLinksChanged;
         try { await JS.InvokeVoidAsync("clearAnalysisRefDotNet"); }
         catch { /* JS context may already be gone during shutdown */ }
         _dotNetRef?.Dispose();
@@ -335,12 +358,15 @@ else
         if (!_runningKeys.Add(key)) return;
         _selectedFeature = feature;
         _selectedKey     = key;
+        if (feature == "explain") Settings.PreferredExplainModel = modelId;
+        else if (feature == "review") Settings.PreferredReviewModel = modelId;
         _ = RunAsync(key, refresh: false);
     }
 
     private void RefreshEntry(AiRunKey key)
     {
         if (Diff is null || !_runningKeys.Add(key)) return;
+        _erroredKeys.Remove(key);
         _ = RunAsync(key, refresh: true);
     }
 
@@ -358,10 +384,20 @@ else
     {
         if (_pendingDeleteKey is null || Diff is null) return;
         AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, _pendingDeleteKey);
+        _erroredKeys.Remove(_pendingDeleteKey);
+        _errors.Remove(_pendingDeleteKey);
         if (_selectedKey == _pendingDeleteKey) { _selectedFeature = null; _selectedKey = null; }
         LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
         _pendingDeleteKey = null;
     }
+
+    private static string ProviderIconClass(string modelKey) =>
+        modelKey.StartsWith("copilot:", StringComparison.Ordinal) ? "icon-copilot" : "icon-claude";
+
+    private string GetAiDisplayName(string modelKey) =>
+        modelKey.StartsWith("copilot:", StringComparison.Ordinal)
+            ? CopilotModelService.GetDisplayName(modelKey["copilot:".Length..])
+            : ModelService.GetDisplayName(modelKey);
 
     private async Task RunAsync(AiRunKey key, bool refresh)
     {
@@ -373,19 +409,33 @@ else
 
         try
         {
-            var result = key.Feature == "review"
-                ? await Claude.ReviewDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns)
-                : await Claude.ExplainDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns);
+            string result;
+            if (key.Model.StartsWith("copilot:", StringComparison.Ordinal))
+            {
+                var rawId = key.Model["copilot:".Length..];
+                result = key.Feature == "review"
+                    ? await Copilot.ReviewDiffAsync(Diff, rawId)
+                    : await Copilot.ExplainDiffAsync(Diff, rawId);
+            }
+            else
+            {
+                result = key.Feature == "review"
+                    ? await Claude.ReviewDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns)
+                    : await Claude.ExplainDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns);
+            }
             AiCache.Set(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key, result);
         }
         catch (UnauthorizedAccessException ex)
         {
             _errors[key] = ex.Message;
-            ClaudeAuth.Reload();
+            _erroredKeys.Add(key);
+            if (!key.Model.StartsWith("copilot:", StringComparison.Ordinal))
+                ClaudeAuth.Reload();
         }
         catch (Exception ex)
         {
             _errors[key] = $"Request failed: {ex.Message}";
+            _erroredKeys.Add(key);
         }
         finally
         {

@@ -88,7 +88,7 @@ public partial class App : Application
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(winId);
 
             var allDisplays = Microsoft.UI.Windowing.DisplayArea.FindAll();
-            var monitorFound = false;
+            Microsoft.UI.Windowing.DisplayArea? targetDisplay = null;
             for (int i = 0; i < allDisplays.Count; i++)
             {
                 var d = allDisplays[i];
@@ -96,14 +96,23 @@ public partial class App : Application
                     d.WorkArea.Y                     == _settings.WindowMonitorTop   &&
                     d.WorkArea.X + d.WorkArea.Width  == _settings.WindowMonitorRight &&
                     d.WorkArea.Y + d.WorkArea.Height == _settings.WindowMonitorBottom)
-                    monitorFound = true;
+                {
+                    targetDisplay = d;
+                    break;
+                }
             }
 
-            if (!monitorFound) return;
+            if (targetDisplay is null) return;
 
-            appWindow.MoveAndResize(new Windows.Graphics.RectInt32(
-                _settings.WindowX, _settings.WindowY,
-                _settings.WindowWidth, _settings.WindowHeight));
+            // Clamp position and size to the monitor's work area so the window
+            // can't restore off-screen (e.g. if the display resolution shrank).
+            var wa = targetDisplay.WorkArea;
+            var x = Math.Max(wa.X, Math.Min(_settings.WindowX, wa.X + wa.Width  - 100));
+            var y = Math.Max(wa.Y, Math.Min(_settings.WindowY, wa.Y + wa.Height - 100));
+            var w = Math.Min(_settings.WindowWidth,  wa.Width);
+            var h = Math.Min(_settings.WindowHeight, wa.Height);
+
+            appWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
         }
         catch { /* best-effort */ }
     }

@@ -2,6 +2,8 @@
 @inject ISettingsService Svc
 @inject IClaudeAuthService ClaudeAuth
 @inject IClaudeModelService ModelService
+@inject ICopilotAuthService CopilotAuth
+@inject ICopilotModelService CopilotModelService
 @inject AiCacheService AiCache
 @implements IDisposable
 
@@ -32,33 +34,6 @@
                     <input type="checkbox" @bind="fontLigatures" @bind:after="SaveFontLigatures" />
                     <span class="toggle-track"></span>
                 </label>
-            </div>
-        </div>
-    </section>
-
-    <section class="settings-section">
-        <p class="section-title">Repository History</p>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Recent repositories to show</p>
-                    <p class="setting-desc">Maximum shown on the home screen</p>
-                </div>
-                <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
-                    @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
-                    {
-                        <option value="@n">@n</option>
-                    }
-                </select>
-            </div>
-        </div>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Clear history</p>
-                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
-                </div>
-                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
             </div>
         </div>
     </section>
@@ -177,11 +152,141 @@
                 </div>
             }
         </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title"><span class="icon icon-copilot" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>GitHub Models</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (CopilotAuth.State == CopilotAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(CopilotAuth.Username))
+                            {
+                                <span> · @CopilotAuth.Username</span>
+                            }
+                        </p>
+                        <p class="setting-desc">To sign out, run <code>gh auth logout</code> in your terminal.</p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — install the <a href="https://cli.github.com" target="_blank">GitHub CLI</a> and run <code>gh auth login</code>, then click Reload.
+                        </p>
+                        @if (!string.IsNullOrEmpty(CopilotAuth.LastError))
+                        {
+                            <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@CopilotAuth.LastError</p>
+                        }
+                    }
+                </div>
+                <button class="btn btn-sm" disabled="@_copilotReloading" @onclick="ReloadCopilotAuth">
+                    @(_copilotReloading ? "Checking…" : "Reload")
+                </button>
+            </div>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <button class="collapsible-label" @onclick="() => _copilotModelsExpanded = !_copilotModelsExpanded">
+                        <span class="collapsible-chevron @(_copilotModelsExpanded ? "open" : "")">›</span>
+                        <p class="setting-label" style="display:inline">Available models</p>
+                    </button>
+                    <p class="setting-desc">
+                        @if (CopilotModelService.LastFetchedAt.HasValue)
+                        {
+                            <span>@CopilotModelService.Models.Count model@(CopilotModelService.Models.Count == 1 ? "" : "s") · last updated @CopilotModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
+                            if (CopilotModelService.IsUsingDefaults)
+                            {
+                                <span class="auth-plan" title="API fetch failed or returned no results; using built-in model list"> · built-in list</span>
+                            }
+                            else
+                            {
+                                <span class="auth-plan"> · from API</span>
+                            }
+                        }
+                        else
+                        {
+                            <span>Never fetched</span>
+                        }
+                    </p>
+                </div>
+                <button class="btn btn-sm" disabled="@CopilotModelService.IsLoading"
+                        @onclick="RefreshCopilotModels">
+                    @(CopilotModelService.IsLoading ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+            @if (_copilotModelsExpanded && CopilotModelService.Models.Count > 0)
+            {
+                <div class="model-list">
+                    @foreach (var model in CopilotModelService.Models)
+                    {
+                        var capturedId = model.Id;
+                        <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
+                            <div class="model-list-meta">
+                                <code class="model-list-id">@model.Id</code>
+                            </div>
+                            <div class="model-list-name-row">
+                                <input class="model-name-input"
+                                       value="@model.DisplayName"
+                                       @onchange="e => CopilotModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                       title="Edit display name" />
+                                @if (model.IsCustomName)
+                                {
+                                    <button class="model-reset-btn" title="Reset to default name"
+                                            @onclick="() => CopilotModelService.ResetDisplayName(capturedId)">↺</button>
+                                }
+                                <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                        title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                        @onclick="() => CopilotModelService.ToggleHidden(capturedId)">
+                                    <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Repository History</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Recent repositories to show</p>
+                    <p class="setting-desc">Maximum shown on the home screen</p>
+                </div>
+                <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
+                    @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
+                    {
+                        <option value="@n">@n</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Data</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Clear history</p>
+                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
+            </div>
+        </div>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
                     <p class="setting-label">Cached results</p>
-                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored.")</p>
+                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored (Claude and GitHub Models).")</p>
                 </div>
                 <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
                         @onclick="() => _showClearCacheConfirm = true">Clear</button>
@@ -247,6 +352,8 @@
     private bool analysisLinksEnabled;
     private bool _showClearCacheConfirm;
     private bool _modelsExpanded;
+    private bool _copilotModelsExpanded;
+    private bool _copilotReloading;
 
     protected override void OnInitialized()
     {
@@ -256,14 +363,20 @@
         aiToolsEnabled        = Svc.AiToolsEnabled;
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
-        ModelService.ModelsChanged += OnModelsChanged;
+        ModelService.ModelsChanged        += OnModelsChanged;
+        CopilotModelService.ModelsChanged += OnModelsChanged;
     }
 
     private void OnModelsChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => ModelService.ModelsChanged -= OnModelsChanged;
+    public void Dispose()
+    {
+        ModelService.ModelsChanged        -= OnModelsChanged;
+        CopilotModelService.ModelsChanged -= OnModelsChanged;
+    }
 
-    private async Task RefreshModels() => await ModelService.RefreshAsync();
+    private async Task RefreshModels()        => await ModelService.RefreshAsync();
+    private async Task RefreshCopilotModels() => await CopilotModelService.RefreshAsync();
 
     private void SetTheme(AppTheme theme)
     {
@@ -297,6 +410,15 @@
     private void ReloadAuth()
     {
         ClaudeAuth.Reload();
+        StateHasChanged();
+    }
+
+    private async Task ReloadCopilotAuth()
+    {
+        _copilotReloading = true;
+        StateHasChanged();
+        await CopilotAuth.RefreshAsync();
+        _copilotReloading = false;
         StateHasChanged();
     }
 

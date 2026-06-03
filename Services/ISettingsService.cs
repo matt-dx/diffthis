@@ -14,8 +14,10 @@ public interface ISettingsService
     void SaveBranchState(string repoPath, BranchSelectionState state);
 
     // ── Claude AI defaults ─────────────────────────────────────────────────
-    bool AiToolsEnabled { get; set; }  // default: false
-    int  AiMaxTurns     { get; set; }  // default: 5 (0 = unlimited)
+    bool    AiToolsEnabled        { get; set; }  // default: false
+    int     AiMaxTurns            { get; set; }  // default: 5 (0 = unlimited)
+    string  PreferredExplainModel { get; set; }  // last-used model for Context runs
+    string  PreferredReviewModel  { get; set; }  // last-used model for Code Review runs
 
     // ── MainView layout ────────────────────────────────────────────────────
     bool MainViewSideBySide { get; set; }  // default: false (tabbed)
