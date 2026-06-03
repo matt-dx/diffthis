@@ -73,6 +73,7 @@ public class GitService : IGitService
 
     public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, int contextLines = 3, CancellationToken ct = default)
     {
+        contextLines = Math.Clamp(contextLines, 0, 200);
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
         var remoteResult = await Cli.Wrap("git")

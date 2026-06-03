@@ -203,23 +203,24 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         return result;
     }
 
-    // Look for a severity keyword within ±200 chars of the ref in the body.
+    // Look for a severity keyword in the 200 chars *before* the ref (severity labels
+    // almost always precede the file reference). Searching forward risks capturing
+    // the label of the next finding instead.
     // Falls back to a category-based default if none found.
     private static RefSeverity DetectSeverity(string body, int refIndex, RefCategory category)
     {
         var start  = Math.Max(0, refIndex - 200);
-        var end    = Math.Min(body.Length, refIndex + 200);
-        var window = body[start..end];
+        var window = body[start..refIndex];
 
-        foreach (Match m in SeverityKeywordRegex().Matches(window))
+        var m = SeverityKeywordRegex().Match(window);
+        if (m.Success)
         {
             return m.Value.ToLowerInvariant() switch
             {
                 "critical" => RefSeverity.Critical,
                 "high"     => RefSeverity.High,
                 "medium"   => RefSeverity.Medium,
-                "low"      => RefSeverity.Low,
-                _          => RefSeverity.Unknown,
+                _          => RefSeverity.Low,   // only remaining match is "low"
             };
         }
 

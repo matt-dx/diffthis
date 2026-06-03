@@ -339,7 +339,7 @@ else
     private void AddEntry(string feature, string modelId)
     {
         if (string.IsNullOrEmpty(modelId) || Diff is null) return;
-        var key = new AiRunKey(feature, modelId, Settings.AiToolsEnabled, Settings.AiMaxTurns);
+        var key = new AiRunKey(feature, modelId, Settings.AiToolsEnabled, Settings.AiMaxTurns, Settings.DiffContextLines);
         if (!_runningKeys.Add(key)) return;
         _selectedFeature = feature;
         _selectedKey     = key;

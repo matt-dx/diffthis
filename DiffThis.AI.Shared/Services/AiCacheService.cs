@@ -6,7 +6,7 @@ using DiffThis.AI.Shared.Models;
 namespace DiffThis.AI.Shared.Services;
 
 /// Identifies a unique AI result: which diff, which feature, which run config.
-public record AiRunKey(string Feature, string Model, bool ToolsEnabled, int MaxTurns)
+public record AiRunKey(string Feature, string Model, bool ToolsEnabled, int MaxTurns, int ContextLines = 3)
 {
     /// Short label used on model tabs, e.g. "Sonnet 4.6 · tools · 5t"
     public string TabLabel(string modelDisplayName)
@@ -82,7 +82,7 @@ public class AiCacheService
     // Format: {esc(repo)}|{esc(base)}|{esc(compare)}|{esc(feature)}|{esc(model)}|{T|N}{maxTurns}
 
     private static string CacheKey(string repo, string baseRef, string compare, AiRunKey k)
-        => $"{Esc(repo)}|{Esc(baseRef)}|{Esc(compare)}|{Esc(k.Feature)}|{Esc(k.Model)}|{(k.ToolsEnabled ? 'T' : 'N')}{k.MaxTurns}";
+        => $"{Esc(repo)}|{Esc(baseRef)}|{Esc(compare)}|{Esc(k.Feature)}|{Esc(k.Model)}|{(k.ToolsEnabled ? 'T' : 'N')}{k.MaxTurns}|c{k.ContextLines}";
 
     private static AiRunKey ParseRunKey(string key)
     {
@@ -91,12 +91,16 @@ public class AiCacheService
         var parts = key.Split('|');
         if (parts.Length < 6) return new AiRunKey("", key, false, 0);
 
-        var cfg     = parts[^1];                      // e.g. "T5" or "N0"
-        var model   = parts[^2];
-        var feature = parts[^3];
-        var tools   = cfg.Length > 0 && cfg[0] == 'T';
-        var turns   = int.TryParse(cfg.Length > 1 ? cfg[1..] : "0", out var t) ? t : 0;
-        return new AiRunKey(feature, model, tools, turns);
+        // New format: ...feature|model|{T/N}{turns}|c{contextLines}
+        // Old format: ...feature|model|{T/N}{turns}  (no context segment)
+        var hasContext = parts.Length >= 7 && parts[^1].StartsWith('c');
+        var cfg        = hasContext ? parts[^2] : parts[^1];  // e.g. "T5" or "N0"
+        var model      = hasContext ? parts[^3] : parts[^2];
+        var feature    = hasContext ? parts[^4] : parts[^3];
+        var tools      = cfg.Length > 0 && cfg[0] == 'T';
+        var turns      = int.TryParse(cfg.Length > 1 ? cfg[1..] : "0", out var t) ? t : 0;
+        var context    = hasContext && int.TryParse(parts[^1][1..], out var c) ? c : 3;
+        return new AiRunKey(feature, model, tools, turns, context);
     }
 
     private static string Esc(string s) => s.Replace("|", "%7C");
