@@ -8,13 +8,21 @@ namespace DiffThis.AI.Shared.Services;
 /// Identifies a unique AI result: which diff, which feature, which run config.
 public record AiRunKey(string Feature, string Model, bool ToolsEnabled, int MaxTurns, int ContextLines = 3)
 {
-    /// Short label used on model tabs, e.g. "Sonnet 4.6 · tools · 5t"
+    /// Short label used on model tabs, e.g. "Sonnet 4.6 · tools · 5t · 10ctx"
     public string TabLabel(string modelDisplayName)
     {
         var cfg = ToolsEnabled
             ? MaxTurns > 0 ? $"tools · {MaxTurns}t" : "tools"
             : MaxTurns > 0 ? $"{MaxTurns}t"          : null;
-        return cfg is null ? modelDisplayName : $"{modelDisplayName} · {cfg}";
+        var ctx    = ContextLines != 3 ? $"{ContextLines}ctx" : null;
+        var suffix = (cfg, ctx) switch
+        {
+            (null, null) => null,
+            (null, _)    => ctx,
+            (_, null)    => cfg,
+            _            => $"{cfg} · {ctx}",
+        };
+        return suffix is null ? modelDisplayName : $"{modelDisplayName} · {suffix}";
     }
 }
 
@@ -79,7 +87,7 @@ public class AiCacheService
     }
 
     // ── Key encoding ──────────────────────────────────────────────────────
-    // Format: {esc(repo)}|{esc(base)}|{esc(compare)}|{esc(feature)}|{esc(model)}|{T|N}{maxTurns}
+    // Format: {esc(repo)}|{esc(base)}|{esc(compare)}|{esc(feature)}|{esc(model)}|{T|N}{maxTurns}|c{contextLines}
 
     private static string CacheKey(string repo, string baseRef, string compare, AiRunKey k)
         => $"{Esc(repo)}|{Esc(baseRef)}|{Esc(compare)}|{Esc(k.Feature)}|{Esc(k.Model)}|{(k.ToolsEnabled ? 'T' : 'N')}{k.MaxTurns}|c{k.ContextLines}";

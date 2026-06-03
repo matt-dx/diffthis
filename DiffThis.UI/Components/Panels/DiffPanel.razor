@@ -82,11 +82,10 @@
                         {
                             <!-- Show one icon per unique Category across all visible refs for this file -->
                             <div class="file-header-refs">
-                                @foreach (var r in fileRefs.GroupBy(r => r.Category).Select(g => g.First()))
+                                @foreach (var r in fileRefs.GroupBy(r => r.Category).Select(g => g.MinBy(x => (int)x.Severity)))
                                 {
-                                    var capturedR = r;
-                                    <span class="@RefIconClass(r.Category) ref-icon file-ref-icon @SeverityCss(r.Severity)"
-                                          title="@RefTooltip(r)"
+                                    <span class="@RefIconClass(r!.Category) ref-icon file-ref-icon @SeverityCss(r!.Severity)"
+                                          title="@RefTooltip(r!)"
                                           @onclick="e => OpenContextMenu(fileRefs.ToList(), e)"
                                           @onclick:stopPropagation></span>
                                 }
@@ -329,7 +328,7 @@
     private string RefTooltip(AnalysisRef r)
     {
         var model = ModelService.GetDisplayName(r.RunKey.Model);
-        var sev   = r.Severity != RefSeverity.Unknown ? $" · {r.Severity.ToString().ToLower()}" : "";
+        var sev   = r.Severity != RefSeverity.Unknown ? $" · {r.Severity.ToString().ToLowerInvariant()}" : "";
         return $"{model}{sev}";
     }
 

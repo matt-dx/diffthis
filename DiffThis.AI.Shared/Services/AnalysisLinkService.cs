@@ -65,14 +65,15 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 var fileIdx = ResolveFileIndex(r.FilePath, diff);
                 if (fileIdx < 0) continue;
 
-                // Guard: skip line refs that fall outside every hunk range in the file.
-                // These are hallucinated line numbers — keep them at file level only.
-                if (!LineIsInDiff(r.LineFrom.Value, diff.Files[fileIdx])) continue;
-
                 var from = r.LineFrom.Value;
                 var to   = r.LineTo ?? from;
                 for (var ln = from; ln <= to; ln++)
                 {
+                    // Skip individual lines that fall outside every hunk range.
+                    // Checking per-line (not just LineFrom) prevents a range with a valid
+                    // start but an out-of-hunk end from ballooning the index.
+                    if (!LineIsInDiff(ln, diff.Files[fileIdx])) continue;
+
                     var key = (fileIdx, ln);
                     if (!index.TryGetValue(key, out var list))
                         index[key] = list = [];
@@ -212,10 +213,15 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         var start  = Math.Max(0, refIndex - 200);
         var window = body[start..refIndex];
 
-        var m = SeverityKeywordRegex().Match(window);
-        if (m.Success)
+        // Use the *last* match — it's closest to the ref and therefore most likely
+        // to be the severity label for this specific finding rather than a prior one.
+        Match? last = null;
+        foreach (Match m in SeverityKeywordRegex().Matches(window))
+            last = m;
+
+        if (last is not null)
         {
-            return m.Value.ToLowerInvariant() switch
+            return last.Value.ToLowerInvariant() switch
             {
                 "critical" => RefSeverity.Critical,
                 "high"     => RefSeverity.High,
