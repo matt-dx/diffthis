@@ -27,6 +27,9 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         RegexOptions.None)]
     private static partial Regex FileRefRegex();
 
+    [GeneratedRegex(@"\b(critical|high|medium|low)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SeverityKeywordRegex();
+
     // Matches a file reference with a known source-code extension inside <code> content.
     // Restricted to real extensions to avoid false positives like changedFields.add or e.Value.
     [GeneratedRegex(
@@ -61,6 +64,10 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 if (r.LineFrom is null) continue; // file-only ref; needs a line to index
                 var fileIdx = ResolveFileIndex(r.FilePath, diff);
                 if (fileIdx < 0) continue;
+
+                // Guard: skip line refs that fall outside every hunk range in the file.
+                // These are hallucinated line numbers — keep them at file level only.
+                if (!LineIsInDiff(r.LineFrom.Value, diff.Files[fileIdx])) continue;
 
                 var from = r.LineFrom.Value;
                 var to   = r.LineTo ?? from;
@@ -162,7 +169,8 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 var dedupKey = $"{rawPath}:{lineFrom}-{lineTo}:{(int)category}:{runKey.Model}";
                 if (!seen.Add(dedupKey)) continue;
 
-                refs.Add(new AnalysisRef(runKey, rawPath, lineFrom, lineTo, category));
+                var severity = DetectSeverity(body, m.Index, category);
+                refs.Add(new AnalysisRef(runKey, rawPath, lineFrom, lineTo, category, severity));
             }
         }
         return refs;
@@ -195,6 +203,36 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         return result;
     }
 
+    // Look for a severity keyword within ±200 chars of the ref in the body.
+    // Falls back to a category-based default if none found.
+    private static RefSeverity DetectSeverity(string body, int refIndex, RefCategory category)
+    {
+        var start  = Math.Max(0, refIndex - 200);
+        var end    = Math.Min(body.Length, refIndex + 200);
+        var window = body[start..end];
+
+        foreach (Match m in SeverityKeywordRegex().Matches(window))
+        {
+            return m.Value.ToLowerInvariant() switch
+            {
+                "critical" => RefSeverity.Critical,
+                "high"     => RefSeverity.High,
+                "medium"   => RefSeverity.Medium,
+                "low"      => RefSeverity.Low,
+                _          => RefSeverity.Unknown,
+            };
+        }
+
+        // Category-based fallback
+        return category switch
+        {
+            RefCategory.Security   => RefSeverity.High,
+            RefCategory.Bug        => RefSeverity.High,
+            RefCategory.LogicError => RefSeverity.Medium,
+            _                      => RefSeverity.Low,
+        };
+    }
+
     private static RefCategory ClassifyHeading(string heading)
     {
         var h = heading.ToLowerInvariant();
@@ -202,6 +240,17 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         if (h.Contains("logic"))    return RefCategory.LogicError;
         if (h.Contains("security")) return RefCategory.Security;
         return RefCategory.Other;
+    }
+
+    // Returns true if the given new-side line number falls within any hunk's range.
+    private static bool LineIsInDiff(int lineNum, DiffFile file)
+    {
+        foreach (var hunk in file.Hunks)
+        {
+            if (lineNum >= hunk.NewStart && lineNum < hunk.NewStart + hunk.NewCount)
+                return true;
+        }
+        return false;
     }
 
     private static bool LooksLikeFilePath(string s)

@@ -300,7 +300,7 @@
             var baseRef    = pinBase    && !string.IsNullOrEmpty(baseCommit)    ? baseCommit!    : baseBranch!;
             var compareRef = pinCompare && !string.IsNullOrEmpty(compareCommit) ? compareCommit! : compareBranch!;
 
-            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, compareRef);
+            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, compareRef, Settings.DiffContextLines);
 
             // Build display labels — show "branch @ shortHash" when a specific commit is pinned
             Session.CurrentDiff.BaseLabel = pinBase && !string.IsNullOrEmpty(baseCommit)

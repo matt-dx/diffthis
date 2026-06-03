@@ -14,6 +14,7 @@ public class SettingsService : ISettingsService
     private const string AiMaxTurnsKey            = "ai_max_turns";
     private const string PreferredExplainModelKey = "preferred_explain_model";
     private const string PreferredReviewModelKey  = "preferred_review_model";
+    private const string DiffContextLinesKey      = "diff_context_lines";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string WindowXKey             = "window_x";
@@ -107,6 +108,12 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(PreferredReviewModelKey, "");
         set => Preferences.Set(PreferredReviewModelKey, value);
+    }
+
+    public int DiffContextLines
+    {
+        get => Preferences.Get(DiffContextLinesKey, 3);
+        set => Preferences.Set(DiffContextLinesKey, value);
     }
 
     public bool MainViewSideBySide

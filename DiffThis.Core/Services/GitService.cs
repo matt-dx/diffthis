@@ -71,7 +71,7 @@ public class GitService : IGitService
         return result.ExitCode == 0;
     }
 
-    public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default)
+    public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, int contextLines = 3, CancellationToken ct = default)
     {
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
@@ -100,7 +100,7 @@ public class GitService : IGitService
             .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
 
         var diffResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--unified=3", $"{baseBranch}..{compareBranch}"])
+            .WithArguments(["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}"])
             .WithWorkingDirectory(repositoryPath)
             .WithValidation(CommandResultValidation.None)
             .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);

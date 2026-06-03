@@ -20,7 +20,13 @@
                     <span class="icon @(SidebarCollapsed ? "icon-chevron-bar-right" : "icon-chevron-bar-left")" style="width:16px;height:16px"></span>
                 </button>
             </div>
-            <div class="sidebar-heading">Changed Files</div>
+            <div class="sidebar-heading">
+                <span>Changed Files</span>
+                <div class="file-stats">
+                    <span class="add">+@Diff.TotalAdditions</span>
+                    <span class="del">-@Diff.TotalDeletions</span>
+                </div>
+            </div>
             @foreach (var (file, i) in Diff.Files.Select((f, i) => (f, i)))
             {
                 var hidden = Session.HiddenFiles.Contains(i);
@@ -79,8 +85,8 @@
                                 @foreach (var r in fileRefs.GroupBy(r => r.Category).Select(g => g.First()))
                                 {
                                     var capturedR = r;
-                                    <span class="@RefIconClass(r.Category) ref-icon file-ref-icon"
-                                          title="@ModelService.GetDisplayName(r.RunKey.Model)"
+                                    <span class="@RefIconClass(r.Category) ref-icon file-ref-icon @SeverityCss(r.Severity)"
+                                          title="@RefTooltip(r)"
                                           @onclick="e => OpenContextMenu(fileRefs.ToList(), e)"
                                           @onclick:stopPropagation></span>
                                 }
@@ -125,8 +131,8 @@
                                                 @if (lineRefs.Count == 1)
                                                 {
                                                     var r = lineRefs[0];
-                                                    <span class="@RefIconClass(r.Category) ref-icon"
-                                                          title="@ModelService.GetDisplayName(r.RunKey.Model)"
+                                                    <span class="@RefIconClass(r.Category) ref-icon @SeverityCss(r.Severity)"
+                                                          title="@RefTooltip(r)"
                                                           @onclick="() => NavigateToRef(r)"></span>
                                                 }
                                                 else if (lineRefs.Count > 1)
@@ -169,8 +175,8 @@
                     {
                         var capturedR = r;
                         <div class="ref-context-item" @onclick="() => { NavigateToRef(capturedR); CloseContextMenu(); }">
-                            <span class="@RefIconClass(r.Category) ref-icon"></span>
-                            <span>@ModelService.GetDisplayName(r.RunKey.Model)</span>
+                            <span class="@RefIconClass(r.Category) ref-icon @SeverityCss(r.Severity)"></span>
+                            <span>@RefTooltip(r)</span>
                         </div>
                     }
                 </div>
@@ -310,6 +316,22 @@
         RefCategory.Security   => "icon icon-ref-shield-cracked",
         _                      => "icon icon-ref-bubble",
     };
+
+    private static string SeverityCss(RefSeverity s) => s switch
+    {
+        RefSeverity.Critical => "severity-critical",
+        RefSeverity.High     => "severity-high",
+        RefSeverity.Medium   => "severity-medium",
+        RefSeverity.Low      => "severity-low",
+        _                    => "",
+    };
+
+    private string RefTooltip(AnalysisRef r)
+    {
+        var model = ModelService.GetDisplayName(r.RunKey.Model);
+        var sev   = r.Severity != RefSeverity.Unknown ? $" · {r.Severity.ToString().ToLower()}" : "";
+        return $"{model}{sev}";
+    }
 
     private static string LineCss(DiffLineType t) => t switch
     {
