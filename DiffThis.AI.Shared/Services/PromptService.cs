@@ -78,14 +78,18 @@ public class PromptService
     {
         var diffContent = BuildDiffContent(diff, maxDiffChars);
 
-        var system = template
+        // Take only the portion of the template before {{DiffContent}} as the system
+        // message, so any text that follows the placeholder is not included.
+        var splitIndex = template.IndexOf("{{DiffContent}}", StringComparison.Ordinal);
+        var systemTemplate = splitIndex >= 0 ? template[..splitIndex] : template;
+
+        var system = systemTemplate
             .Replace("{{RepositoryName}}", diff.RepositoryName)
             .Replace("{{BaseDisplay}}", diff.BaseDisplay)
             .Replace("{{CompareDisplay}}", diff.CompareDisplay)
             .Replace("{{FileCount}}", diff.Files.Count.ToString())
             .Replace("{{Additions}}", diff.TotalAdditions.ToString())
             .Replace("{{Deletions}}", diff.TotalDeletions.ToString())
-            .Replace("{{DiffContent}}", string.Empty)
             .TrimEnd();
 
         return (system, diffContent);

@@ -55,10 +55,6 @@ public class CopilotAuthService : ICopilotAuthService
 
     public async Task<string?> GetSessionTokenAsync(CancellationToken ct = default)
     {
-        // Fast path — return cached token while still valid
-        if (_sessionToken is not null && DateTime.UtcNow < _sessionTokenExpiry)
-            return _sessionToken;
-
         await _lock.WaitAsync(ct);
         try
         {
