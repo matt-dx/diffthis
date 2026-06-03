@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build (debug)
-dotnet build -f net10.0-windows10.0.19041.0
+dotnet build DiffThis\DiffThis.csproj -f net10.0-windows10.0.19041.0
 
 # Build (release)
-dotnet build -f net10.0-windows10.0.19041.0 -c Release
+dotnet build DiffThis\DiffThis.csproj -f net10.0-windows10.0.19041.0 -c Release
 
 # Run
-dotnet run -f net10.0-windows10.0.19041.0
+dotnet run --project DiffThis\DiffThis.csproj -f net10.0-windows10.0.19041.0
 ```
 
 There are no tests in this project. Target framework must always be specified explicitly — the project is Windows-only (`net10.0-windows10.0.19041.0`).

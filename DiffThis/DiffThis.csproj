@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows10.0.19041.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiffThis</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCssItems>false</EnableDefaultCssItems>
+    <Nullable>enable</Nullable>
+    <ApplicationTitle>DiffThis</ApplicationTitle>
+    <ApplicationId>com.diffthis.app</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <WindowsPackageType>None</WindowsPackageType>
+    <Platforms>Windows</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#1E1E2E" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1E1E2E" BaseSize="128,128" />
+    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="10.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.*" />
+    <PackageReference Include="CommunityToolkit.Maui" Version="13.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DiffThis.UI\DiffThis.UI.csproj" />
+    <ProjectReference Include="..\DiffThis.Core\DiffThis.Core.csproj" />
+    <ProjectReference Include="..\DiffThis.AI.Shared\DiffThis.AI.Shared.csproj" />
+    <ProjectReference Include="..\DiffThis.AI.Claude\DiffThis.AI.Claude.csproj" />
+    <ProjectReference Include="..\DiffThis.AI.OpenAI\DiffThis.AI.OpenAI.csproj" />
+  </ItemGroup>
+</Project>

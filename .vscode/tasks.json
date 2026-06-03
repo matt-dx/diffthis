@@ -7,7 +7,7 @@
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/DiffThis.csproj",
+        "${workspaceFolder}/DiffThis/DiffThis.csproj",
         "-f",
         "net10.0-windows10.0.19041.0",
         "/property:GenerateFullPaths=true",
@@ -25,7 +25,7 @@
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/DiffThis.csproj",
+        "${workspaceFolder}/DiffThis/DiffThis.csproj",
         "-f",
         "net10.0-windows10.0.19041.0",
         "-c",

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows10.0.19041.0</TargetFrameworks>
+    <RootNamespace>DiffThis.AI.Shared</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts\*.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DiffThis.Core\DiffThis.Core.csproj" />
+  </ItemGroup>
+</Project>
