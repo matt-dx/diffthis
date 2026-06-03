@@ -48,11 +48,7 @@ public class CopilotAuthService : ICopilotAuthService
     public CopilotAuthService()
     {
         Username = Preferences.Get(UsernameKey, (string?)null);
-
-        // If we have a stored OAuth token, assume authenticated until exchange proves otherwise.
-        var stored = Preferences.Get(OAuthTokenKey, (string?)null);
-        if (!string.IsNullOrEmpty(stored))
-            State = CopilotAuthState.Authenticated;
+        _ = InitializeStateAsync();
     }
 
     // ── Session token ─────────────────────────────────────────────────────
@@ -69,10 +65,11 @@ public class CopilotAuthService : ICopilotAuthService
             if (_sessionToken is not null && DateTime.UtcNow < _sessionTokenExpiry)
                 return _sessionToken;
 
-            var oauthToken = Preferences.Get(OAuthTokenKey, (string?)null);
+            var oauthToken = await GetStoredOAuthTokenAsync();
             if (string.IsNullOrEmpty(oauthToken))
             {
                 State = CopilotAuthState.NotFound;
+                StateChanged?.Invoke();
                 return null;
             }
 
@@ -97,7 +94,7 @@ public class CopilotAuthService : ICopilotAuthService
                 if ((int)resp.StatusCode is 401 or 403)
                 {
                     // Token was revoked — force re-authentication
-                    Preferences.Remove(OAuthTokenKey);
+                    RemoveStoredOAuthToken();
                     _sessionToken = null;
                     State         = CopilotAuthState.NotFound;
                     LastError     = "GitHub Copilot session expired. Please sign in again.";
@@ -106,6 +103,7 @@ public class CopilotAuthService : ICopilotAuthService
                 else
                 {
                     LastError = $"Session token exchange failed: HTTP {(int)resp.StatusCode}";
+                    StateChanged?.Invoke();
                 }
                 return null;
             }
@@ -117,6 +115,7 @@ public class CopilotAuthService : ICopilotAuthService
             if (!root.TryGetProperty("token", out var tokenProp))
             {
                 LastError = "Unexpected response from Copilot token exchange.";
+                StateChanged?.Invoke();
                 return null;
             }
 
@@ -124,7 +123,7 @@ public class CopilotAuthService : ICopilotAuthService
 
             // Refresh ~60 s before the server-specified expiry
             _sessionTokenExpiry = root.TryGetProperty("refresh_in", out var refreshIn)
-                ? DateTime.UtcNow.AddSeconds(refreshIn.GetInt32() - 60)
+                ? DateTime.UtcNow.AddSeconds(Math.Max(refreshIn.GetInt32() - 60, 1))
                 : DateTime.UtcNow.AddMinutes(24);
 
             LastError = null;
@@ -140,6 +139,7 @@ public class CopilotAuthService : ICopilotAuthService
         catch (Exception ex)
         {
             LastError = $"Session token exchange error: {ex.Message}";
+            StateChanged?.Invoke();
             return null;
         }
     }
@@ -245,7 +245,13 @@ public class CopilotAuthService : ICopilotAuthService
                 if (string.IsNullOrEmpty(oauthToken)) continue;
 
                 // Success — store token and update state
-                Preferences.Set(OAuthTokenKey, oauthToken);
+                if (!await TrySetStoredOAuthTokenAsync(oauthToken))
+                {
+                    State     = CopilotAuthState.NotFound;
+                    LastError = "Unable to securely store Copilot credentials on this device.";
+                    StateChanged?.Invoke();
+                    return;
+                }
 
                 // Invalidate any cached session token so next call exchanges fresh
                 _sessionToken       = null;
@@ -276,22 +282,22 @@ public class CopilotAuthService : ICopilotAuthService
 
     // ── Refresh / SignOut ─────────────────────────────────────────────────
 
-    public Task<bool> RefreshAsync(CancellationToken ct = default)
+    public async Task<bool> RefreshAsync(CancellationToken ct = default)
     {
         _sessionToken       = null;
         _sessionTokenExpiry = DateTime.MinValue;
 
-        var stored = Preferences.Get(OAuthTokenKey, (string?)null);
+        var stored = await GetStoredOAuthTokenAsync();
         if (string.IsNullOrEmpty(stored))
         {
             State = CopilotAuthState.NotFound;
             StateChanged?.Invoke();
-            return Task.FromResult(false);
+            return false;
         }
 
         State = CopilotAuthState.Authenticated;
         StateChanged?.Invoke();
-        return Task.FromResult(true);
+        return true;
     }
 
     public void SignOut()
@@ -303,7 +309,7 @@ public class CopilotAuthService : ICopilotAuthService
         _sessionToken       = null;
         _sessionTokenExpiry = DateTime.MinValue;
 
-        Preferences.Remove(OAuthTokenKey);
+        RemoveStoredOAuthToken();
         Preferences.Remove(UsernameKey);
 
         Username  = null;
@@ -335,5 +341,64 @@ public class CopilotAuthService : ICopilotAuthService
             StateChanged?.Invoke();
         }
         catch { /* best effort */ }
+    }
+
+    private async Task InitializeStateAsync()
+    {
+        try
+        {
+            var stored = await GetStoredOAuthTokenAsync();
+            if (!string.IsNullOrEmpty(stored))
+            {
+                State = CopilotAuthState.Authenticated;
+                StateChanged?.Invoke();
+            }
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
+    private static async Task<bool> TrySetStoredOAuthTokenAsync(string oauthToken)
+    {
+        try
+        {
+            await SecureStorage.Default.SetAsync(OAuthTokenKey, oauthToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<string?> GetStoredOAuthTokenAsync()
+    {
+        try
+        {
+            var token = await SecureStorage.Default.GetAsync(OAuthTokenKey);
+            if (!string.IsNullOrEmpty(token))
+                return token;
+        }
+        catch
+        {
+            // best effort
+        }
+
+        var legacyToken = Preferences.Get(OAuthTokenKey, (string?)null);
+        if (string.IsNullOrEmpty(legacyToken))
+            return null;
+
+        if (await TrySetStoredOAuthTokenAsync(legacyToken))
+            Preferences.Remove(OAuthTokenKey);
+
+        return legacyToken;
+    }
+
+    private static void RemoveStoredOAuthToken()
+    {
+        try { SecureStorage.Default.Remove(OAuthTokenKey); } catch { /* best effort */ }
+        Preferences.Remove(OAuthTokenKey);
     }
 }

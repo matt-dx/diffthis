@@ -1,12 +1,11 @@
-using DiffThis.Core.Models;
-using DiffThis.AI.Shared.Models;
+using DiffThis.AI.OpenAI.Models;
 
 namespace DiffThis.AI.OpenAI.Services;
 
 public interface ICopilotModelService
 {
-    IReadOnlyList<ClaudeModel> Models        { get; }
-    IReadOnlyList<ClaudeModel> VisibleModels { get; }
+    IReadOnlyList<CopilotModel> Models        { get; }
+    IReadOnlyList<CopilotModel> VisibleModels { get; }
     bool                       IsLoading     { get; }
     DateTime?                  LastFetchedAt { get; }
     bool                       IsUsingDefaults { get; }  // true when model list came from built-in fallback

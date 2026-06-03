@@ -730,6 +730,8 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .model-dropdown-option {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 10px; cursor: pointer; font-size: 13px;
+  width: 100%; border: 0; background: transparent;
+  text-align: left; color: inherit; font: inherit;
 }
 .model-dropdown-option:hover    { background: var(--hover); }
 .model-dropdown-option.selected { background: var(--hover); }

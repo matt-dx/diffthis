@@ -23,11 +23,12 @@
             @foreach (var m in Options)
             {
                 var captured = m;
-                <div class="model-dropdown-option @(m.Key == Value ? "selected" : "")"
-                     @onclick="() => Select(captured)">
+                <button type="button"
+                        class="model-dropdown-option @(m.Key == Value ? "selected" : "")"
+                        @onclick="() => Select(captured)">
                     <span class="icon @IconClass(m)" style="width:14px;height:14px"></span>
                     <span class="model-dropdown-option-name">@m.DisplayName</span>
-                </div>
+                </button>
             }
         </div>
     }

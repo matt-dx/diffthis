@@ -1,6 +1,5 @@
 using System.Text.Json;
-using DiffThis.Core.Models;
-using DiffThis.AI.Shared.Models;
+using DiffThis.AI.OpenAI.Models;
 
 namespace DiffThis.AI.OpenAI.Services;
 
@@ -31,10 +30,10 @@ public class CopilotModelService : ICopilotModelService
     private readonly ICopilotAuthService _auth;
     private readonly HttpClient          _http = new();
 
-    private List<ClaudeModel> _models = [];
+    private List<CopilotModel> _models = [];
 
-    public IReadOnlyList<ClaudeModel> Models        => _models;
-    public IReadOnlyList<ClaudeModel> VisibleModels => _models.Where(m => !m.IsHidden).ToList();
+    public IReadOnlyList<CopilotModel> Models        => _models;
+    public IReadOnlyList<CopilotModel> VisibleModels => _models.Where(m => !m.IsHidden).ToList();
     public bool                       IsLoading       { get; private set; }
     public DateTime?                  LastFetchedAt   { get; private set; }
     public bool                       IsUsingDefaults { get; private set; } = true;
@@ -143,11 +142,11 @@ public class CopilotModelService : ICopilotModelService
 
     private void MergeInto(List<(string id, string display)> fetched, bool fromApi)
     {
-        var merged = new List<ClaudeModel>();
+        var merged = new List<CopilotModel>();
         foreach (var (id, display) in fetched)
         {
             var existing = _models.FirstOrDefault(m => m.Id == id);
-            merged.Add(new ClaudeModel
+            merged.Add(new CopilotModel
             {
                 Id           = id,
                 DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : display,
@@ -288,7 +287,7 @@ public class CopilotModelService : ICopilotModelService
         try
         {
             var json = Preferences.Get(ModelsKey, "[]");
-            _models = JsonSerializer.Deserialize<List<ClaudeModel>>(json) ?? [];
+            _models = JsonSerializer.Deserialize<List<CopilotModel>>(json) ?? [];
             var ts  = Preferences.Get(FetchedAtKey, "");
             LastFetchedAt   = string.IsNullOrEmpty(ts) ? null : DateTime.Parse(ts).ToUniversalTime();
             IsUsingDefaults = Preferences.Get(SourceKey, "defaults") == "defaults";
