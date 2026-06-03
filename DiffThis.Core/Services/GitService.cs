@@ -71,7 +71,7 @@ public class GitService : IGitService
         return result.ExitCode == 0;
     }
 
-    public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, int contextLines = 3, CancellationToken ct = default)
+    public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default, int contextLines = 3)
     {
         contextLines = Math.Clamp(contextLines, 0, 200);
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));

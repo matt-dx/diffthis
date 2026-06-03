@@ -66,7 +66,8 @@ public partial class AnalysisLinkService : IAnalysisLinkService
                 if (fileIdx < 0) continue;
 
                 var from = r.LineFrom.Value;
-                var to   = r.LineTo ?? from;
+                // Cap range iteration so a hallucinated end-line can't cause O(N×hunks) work.
+                var to   = Math.Min(r.LineTo ?? from, from + 500);
                 for (var ln = from; ln <= to; ln++)
                 {
                     // Skip individual lines that fall outside every hunk range.
@@ -204,24 +205,30 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         return result;
     }
 
-    // Look for a severity keyword in the 200 chars *before* the ref (severity labels
-    // almost always precede the file reference). Searching forward risks capturing
-    // the label of the next finding instead.
+    // Scan ±200 chars around the ref for a severity keyword. The model may place the
+    // label before the ref ("**critical** — `File.cs:42`") or after it
+    // ("`File.cs:42` — **critical**"), so we check both sides and pick the nearest match.
     // Falls back to a category-based default if none found.
     private static RefSeverity DetectSeverity(string body, int refIndex, RefCategory category)
     {
-        var start  = Math.Max(0, refIndex - 200);
-        var window = body[start..refIndex];
+        var winStart = Math.Max(0, refIndex - 200);
+        var winEnd   = Math.Min(body.Length, refIndex + 200);
+        var window   = body[winStart..winEnd];
+        // refIndex within the window
+        var localRef = refIndex - winStart;
 
-        // Use the *last* match — it's closest to the ref and therefore most likely
-        // to be the severity label for this specific finding rather than a prior one.
-        Match? last = null;
+        // Find the match whose end is closest to localRef (prefer the nearest label).
+        Match? best     = null;
+        var    bestDist = int.MaxValue;
         foreach (Match m in SeverityKeywordRegex().Matches(window))
-            last = m;
-
-        if (last is not null)
         {
-            return last.Value.ToLowerInvariant() switch
+            var dist = Math.Abs(m.Index + m.Length / 2 - localRef);
+            if (dist < bestDist) { bestDist = dist; best = m; }
+        }
+
+        if (best is not null)
+        {
+            return best.Value.ToLowerInvariant() switch
             {
                 "critical" => RefSeverity.Critical,
                 "high"     => RefSeverity.High,

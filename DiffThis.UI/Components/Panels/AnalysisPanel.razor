@@ -386,7 +386,7 @@ else
         IsCopilot(modelKey) ? "copilot-badge" : "claude-badge";
 
     private string GetAiDisplayName(string modelKey) =>
-        modelKey.StartsWith("copilot:", StringComparison.Ordinal)
+        IsCopilot(modelKey)
             ? CopilotModelService.GetDisplayName(modelKey["copilot:".Length..])
             : ModelService.GetDisplayName(modelKey);
 

@@ -140,8 +140,8 @@ public class PromptService
             ".ex" or ".exs" => "Elixir",
             ".dart"       => "Dart",
             ".lua"        => "Lua",
-            ".r"          => "R",
-            ".m"          => "Objective-C",
+            ".r"          => "R",            // also Rebol; R is far more common in practice
+            ".m"          => "Objective-C",  // also MATLAB/Mathematica; Objective-C wins in iOS/macOS repos
             ".html" or ".htm" => "HTML",
             ".css"        => "CSS",
             ".scss" or ".sass" => "SCSS",
