@@ -112,8 +112,16 @@ public class SettingsService : ISettingsService
 
     public int DiffContextLines
     {
-        get => Preferences.Get(DiffContextLinesKey, 3);
-        set => Preferences.Set(DiffContextLinesKey, value);
+        get
+        {
+            var v = Preferences.Get(DiffContextLinesKey, 3);
+            return v is 3 or 10 or 25 or 50 ? v : 3;
+        }
+        set
+        {
+            if (value is not (3 or 10 or 25 or 50)) value = 3;
+            Preferences.Set(DiffContextLinesKey, value);
+        }
     }
 
     public bool MainViewSideBySide

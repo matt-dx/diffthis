@@ -242,12 +242,15 @@ public partial class AnalysisLinkService : IAnalysisLinkService
         return RefCategory.Other;
     }
 
-    // Returns true if the given new-side line number falls within any hunk's range.
+    // Returns true if the line number falls within any hunk on either the old or new side.
+    // Checking both sides avoids treating references to deleted lines as hallucinations.
     private static bool LineIsInDiff(int lineNum, DiffFile file)
     {
         foreach (var hunk in file.Hunks)
         {
             if (lineNum >= hunk.NewStart && lineNum < hunk.NewStart + hunk.NewCount)
+                return true;
+            if (lineNum >= hunk.OldStart && lineNum < hunk.OldStart + hunk.OldCount)
                 return true;
         }
         return false;
