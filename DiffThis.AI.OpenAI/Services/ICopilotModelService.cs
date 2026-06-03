@@ -1,6 +1,7 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.OpenAI.Services;
 
 public interface ICopilotModelService
 {
@@ -17,7 +18,4 @@ public interface ICopilotModelService
     void   ResetDisplayName(string modelId);
     void   ToggleHidden(string modelId);
     string GetDisplayName(string modelId);
-
-    /// Maximum diff characters this model can handle in a single request.
-    int GetEffectiveDiffCharLimit(string modelId);
 }

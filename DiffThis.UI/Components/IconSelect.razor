@@ -8,7 +8,11 @@
     <button class="model-dropdown-trigger" type="button" @onclick="Toggle" disabled="@(!Options.Any())">
         @if (!string.IsNullOrEmpty(Value))
         {
-            <span class="icon @IconClass(Value)" style="width:14px;height:14px"></span>
+            var selectedModel = Options.FirstOrDefault(m => m.Key == Value);
+            @if (selectedModel is not null)
+            {
+                <span class="icon @IconClass(selectedModel)" style="width:14px;height:14px"></span>
+            }
         }
         <span class="model-dropdown-name">@(SelectedName ?? "—")</span>
         <span class="model-dropdown-chevron">▾</span>
@@ -21,7 +25,7 @@
                 var captured = m;
                 <div class="model-dropdown-option @(m.Key == Value ? "selected" : "")"
                      @onclick="() => Select(captured)">
-                    <span class="icon @IconClass(m.Key)" style="width:14px;height:14px"></span>
+                    <span class="icon @IconClass(m)" style="width:14px;height:14px"></span>
                     <span class="model-dropdown-option-name">@m.DisplayName</span>
                 </div>
             }
@@ -39,8 +43,8 @@
     private string? SelectedName =>
         Options.FirstOrDefault(m => m.Key == Value)?.DisplayName;
 
-    private static string IconClass(string key) =>
-        key.StartsWith("copilot:", StringComparison.Ordinal) ? "icon-copilot" : "icon-claude";
+    private static string IconClass(AiModel m) =>
+        m.Provider == AiProvider.Copilot ? "icon-copilot" : "icon-claude";
 
     private void Toggle() => _open = !_open;
     private void Close()  => _open = false;

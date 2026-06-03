@@ -4,7 +4,7 @@ using System.Text;
 using ColorCode;
 using ColorCode.Common;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 /// <summary>
 /// Wraps ColorCode.HTML to provide per-hunk syntax highlighting for the diff view.

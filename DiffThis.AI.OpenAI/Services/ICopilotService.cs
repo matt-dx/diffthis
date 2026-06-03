@@ -1,6 +1,6 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.OpenAI.Services;
 
 public interface ICopilotService
 {

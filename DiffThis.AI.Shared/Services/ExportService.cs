@@ -1,7 +1,9 @@
 using System.Text;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
+using DiffThis.AI.Shared.Services;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Shared.Services;
 
 public class ExportService : IExportService
 {

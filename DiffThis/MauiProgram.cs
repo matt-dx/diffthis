@@ -1,5 +1,8 @@
 using CommunityToolkit.Maui;
-using DiffThis.Services;
+using DiffThis.Core.Services;
+using DiffThis.AI.Shared.Services;
+using DiffThis.AI.Claude.Services;
+using DiffThis.AI.OpenAI.Services;
 using Microsoft.Extensions.Logging;
 
 namespace DiffThis;

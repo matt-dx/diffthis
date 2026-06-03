@@ -1,6 +1,7 @@
-using DiffThis.Models;
+using DiffThis.AI.Shared.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Shared.Services;
 
 public interface IExportService
 {

@@ -1,4 +1,4 @@
-namespace DiffThis.Models;
+namespace DiffThis.Core.Models;
 
 public class Repository
 {

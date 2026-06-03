@@ -8,7 +8,6 @@
 @inject IAnalysisLinkService LinkService
 @inject ISettingsService Settings
 @inject IJSRuntime JS
-@using DiffThis.Models
 @using Markdig
 @using System.Text.RegularExpressions
 @implements IAsyncDisposable
@@ -38,19 +37,10 @@
         .Concat(reviewItems.Select(k => (feature: "review", key: k)))
         .ToList();
 
-    // Estimate diff size to filter out GitHub Models that can't handle it.
-    var diffChars = diff is not null
-        ? diff.Files.Sum(f => f.Hunks.Sum(h => h.Lines.Sum(l => l.Content.Length + 3)))
-        : 0;
-
-    var copilotFits   = CopilotModelService.VisibleModels
-        .Where(m => diffChars <= CopilotModelService.GetEffectiveDiffCharLimit(m.Id)).ToList();
-    var copilotHidden = CopilotModelService.VisibleModels.Count - copilotFits.Count;
-
     // Combined model list: Claude first, then Copilot (keyed with "copilot:" prefix)
     var allModels = ModelService.VisibleModels
         .Select(m => new AiModel(m.Id, m.Id, m.DisplayName, AiProvider.Claude))
-        .Concat(copilotFits
+        .Concat(CopilotModelService.VisibleModels
             .Select(m => new AiModel($"copilot:{m.Id}", m.Id, m.DisplayName, AiProvider.Copilot)))
         .ToList();
 
@@ -72,7 +62,7 @@
     <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
         <p>Sign in to an AI provider to use AI features.</p>
         <p>For Claude: run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
-        <p>For GitHub Models: run <code>gh auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
+        <p>For GitHub Copilot: click <strong>Sign in</strong> in Settings.</p>
     </div>
 }
 else if (diff is null)
@@ -123,7 +113,7 @@ else
             @if (availableExplain.Count > 0)
             {
                 <div class="analysis-add-row">
-                    <ModelDropdown Options="availableExplain"
+                    <IconSelect Options="availableExplain"
                                    Value="@explainAdd"
                                    ValueChanged="v => _explainAddModel = v" />
                     <button class="btn btn-sm analysis-add-btn"
@@ -132,12 +122,7 @@ else
                 </div>
             }
 
-            @if (copilotHidden > 0)
-            {
-                <p class="analysis-size-note">@copilotHidden GitHub model@(copilotHidden == 1 ? "" : "s") hidden — diff too large</p>
-            }
-
-            <div class="sidebar-heading analysis-section-heading">Code Review</div>
+<div class="sidebar-heading analysis-section-heading">Code Review</div>
             @foreach (var (runKey, sideIdx) in reviewItems.Select((k, i) => (k, i)))
             {
                 var k         = runKey;
@@ -165,7 +150,7 @@ else
             @if (availableReview.Count > 0)
             {
                 <div class="analysis-add-row">
-                    <ModelDropdown Options="availableReview"
+                    <IconSelect Options="availableReview"
                                    Value="@reviewAdd"
                                    ValueChanged="v => _reviewAddModel = v" />
                     <button class="btn btn-sm analysis-add-btn"

@@ -1,4 +1,4 @@
-namespace DiffThis.Services;
+namespace DiffThis.AI.Claude.Services;
 
 public enum ClaudeAuthState { NotFound, Authenticated }
 

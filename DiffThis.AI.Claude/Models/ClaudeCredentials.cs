@@ -1,4 +1,4 @@
-namespace DiffThis.Models;
+namespace DiffThis.AI.Claude.Models;
 
 public class ClaudeCredentials
 {

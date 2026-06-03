@@ -1,7 +1,7 @@
 using System.Text.Json;
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 public class SettingsService : ISettingsService
 {

@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Shared.Services;
 
 /// Identifies a unique AI result: which diff, which feature, which run config.
 public record AiRunKey(string Feature, string Model, bool ToolsEnabled, int MaxTurns)

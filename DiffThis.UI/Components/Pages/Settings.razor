@@ -155,11 +155,12 @@
     </section>
 
     <section class="settings-section">
-        <p class="section-title"><span class="icon icon-copilot" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>GitHub Models</p>
+        <p class="section-title"><span class="icon icon-copilot" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>GitHub Copilot</p>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
                     <p class="setting-label">Account</p>
+
                     @if (CopilotAuth.State == CopilotAuthState.Authenticated)
                     {
                         <p class="setting-desc">
@@ -170,13 +171,27 @@
                                 <span> · @CopilotAuth.Username</span>
                             }
                         </p>
-                        <p class="setting-desc">To sign out, run <code>gh auth logout</code> in your terminal.</p>
+                    }
+                    else if (CopilotAuth.State == CopilotAuthState.PendingDeviceFlow
+                             && _deviceFlowInfo is not null)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-pending"></span>
+                            Waiting for authorization…
+                        </p>
+                        <div class="device-flow-card">
+                            <p class="device-flow-label">Enter this code at <strong>github.com/login/device</strong></p>
+                            <div class="device-flow-code-row">
+                                <code class="device-flow-code">@_deviceFlowInfo.UserCode</code>
+                                <a class="btn btn-sm" href="@_deviceFlowInfo.VerificationUri" target="_blank">Open GitHub ↗</a>
+                            </div>
+                        </div>
                     }
                     else
                     {
                         <p class="setting-desc">
                             <span class="auth-dot auth-off"></span>
-                            Not connected — install the <a href="https://cli.github.com" target="_blank">GitHub CLI</a> and run <code>gh auth login</code>, then click Reload.
+                            Not connected — click <strong>Sign in</strong> to authorize DiffThis with your GitHub Copilot account.
                         </p>
                         @if (!string.IsNullOrEmpty(CopilotAuth.LastError))
                         {
@@ -184,9 +199,23 @@
                         }
                     }
                 </div>
-                <button class="btn btn-sm" disabled="@_copilotReloading" @onclick="ReloadCopilotAuth">
-                    @(_copilotReloading ? "Checking…" : "Reload")
-                </button>
+
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                    @if (CopilotAuth.State == CopilotAuthState.Authenticated)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="CopilotSignOut">Sign out</button>
+                    }
+                    else if (CopilotAuth.State == CopilotAuthState.PendingDeviceFlow)
+                    {
+                        <button class="btn btn-sm" @onclick="CancelCopilotSignIn">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" disabled="@_copilotSigningIn" @onclick="StartCopilotSignIn">
+                            @(_copilotSigningIn ? "Starting…" : "Sign in")
+                        </button>
+                    }
+                </div>
             </div>
         </div>
         <div class="setting-card">
@@ -350,29 +379,34 @@
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
-    private bool _showClearCacheConfirm;
-    private bool _modelsExpanded;
-    private bool _copilotModelsExpanded;
-    private bool _copilotReloading;
+    private bool           _showClearCacheConfirm;
+    private bool           _modelsExpanded;
+    private bool           _copilotModelsExpanded;
+    private bool           _copilotSigningIn;
+    private DeviceFlowInfo? _deviceFlowInfo;
 
     protected override void OnInitialized()
     {
-        _returnUrl     = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
+        _returnUrl            = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
         maxRecent             = Svc.MaxRecentRepositories;
         fontLigatures         = Svc.FontLigatures;
         aiToolsEnabled        = Svc.AiToolsEnabled;
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
+
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
+        CopilotAuth.StateChanged          += OnCopilotStateChanged;
     }
 
-    private void OnModelsChanged() => InvokeAsync(StateHasChanged);
+    private void OnModelsChanged()       => InvokeAsync(StateHasChanged);
+    private void OnCopilotStateChanged() => InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         ModelService.ModelsChanged        -= OnModelsChanged;
         CopilotModelService.ModelsChanged -= OnModelsChanged;
+        CopilotAuth.StateChanged          -= OnCopilotStateChanged;
     }
 
     private async Task RefreshModels()        => await ModelService.RefreshAsync();
@@ -413,13 +447,25 @@
         StateHasChanged();
     }
 
-    private async Task ReloadCopilotAuth()
+    private async Task StartCopilotSignIn()
     {
-        _copilotReloading = true;
+        _copilotSigningIn = true;
         StateHasChanged();
-        await CopilotAuth.RefreshAsync();
-        _copilotReloading = false;
+        _deviceFlowInfo   = await CopilotAuth.StartDeviceFlowAsync();
+        _copilotSigningIn = false;
         StateHasChanged();
+    }
+
+    private void CancelCopilotSignIn()
+    {
+        _deviceFlowInfo = null;
+        CopilotAuth.SignOut(); // resets state to NotFound and fires StateChanged
+    }
+
+    private void CopilotSignOut()
+    {
+        _deviceFlowInfo = null;
+        CopilotAuth.SignOut();
     }
 
     private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";

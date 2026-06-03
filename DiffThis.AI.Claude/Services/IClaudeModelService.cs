@@ -1,6 +1,7 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Claude.Services;
 
 public interface IClaudeModelService
 {

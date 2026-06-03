@@ -1,7 +1,8 @@
 using System.Text.Json;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.OpenAI.Services;
 
 public class CopilotModelService : ICopilotModelService
 {
@@ -10,21 +11,21 @@ public class CopilotModelService : ICopilotModelService
     private const string SourceKey       = "ghmodels_models_source";
 
     // Curated fallback — used when the API fetch fails or on first run.
-    // Model IDs match the GitHub Models catalog (Publisher/model-name format).
+    // These are the model IDs used by api.githubcopilot.com (bare IDs, not
+    // Publisher/model-name format used by the old Azure AI Inference catalog).
     private static readonly (string Id, string Name)[] DefaultModels =
     [
-        ("openai/gpt-4o",                       "GPT-4o"),
-        ("openai/gpt-4o-mini",                  "GPT-4o Mini"),
-        ("openai/o1",                           "o1"),
-        ("openai/o1-mini",                      "o1 Mini"),
-        ("Anthropic/claude-3-5-sonnet",         "Claude 3.5 Sonnet"),
-        ("Anthropic/claude-3-5-haiku",          "Claude 3.5 Haiku"),
-        ("meta/Llama-3.3-70B-Instruct",         "Llama 3.3 70B"),
-        ("meta/Llama-3.1-405B-Instruct",        "Llama 3.1 405B"),
-        ("microsoft/Phi-4",                     "Phi 4"),
-        ("mistral-ai/Mistral-Large-2411",       "Mistral Large"),
-        ("mistral-ai/Mistral-Nemo",             "Mistral Nemo"),
-        ("Cohere/command-r-plus-08-2024",       "Command R+"),
+        ("gpt-4o",                "GPT-4o"),
+        ("gpt-4o-mini",           "GPT-4o Mini"),
+        ("o1",                    "o1"),
+        ("o1-mini",               "o1 Mini"),
+        ("o3-mini",               "o3 Mini"),
+        ("claude-3.5-sonnet",     "Claude 3.5 Sonnet"),
+        ("claude-3.7-sonnet",     "Claude 3.7 Sonnet"),
+        ("gemini-2.0-flash",      "Gemini 2.0 Flash"),
+        ("gemini-1.5-pro",        "Gemini 1.5 Pro"),
+        ("mistral-large",         "Mistral Large"),
+        ("cohere-command-r-plus", "Command R+"),
     ];
 
     private readonly ICopilotAuthService _auth;
@@ -67,10 +68,12 @@ public class CopilotModelService : ICopilotModelService
                 return;
             }
 
-            // GitHub Models catalog endpoint (Azure AI Inference format)
+            // GitHub Copilot models catalog
             using var req = new HttpRequestMessage(HttpMethod.Get,
-                "https://models.inference.ai.azure.com/models");
-            req.Headers.Add("Authorization", $"Bearer {token}");
+                "https://api.githubcopilot.com/models");
+            req.Headers.Add("Authorization",          $"Bearer {token}");
+            req.Headers.Add("Copilot-Integration-Id", "vscode-chat");
+            req.Headers.Add("User-Agent",             "DiffThis/1.0");
 
             var resp = await _http.SendAsync(req, ct);
 
@@ -138,31 +141,17 @@ public class CopilotModelService : ICopilotModelService
                 Id           = id,
                 DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : display,
                 IsCustomName = existing?.IsCustomName ?? false,
-                // New models: hide by default unless they have a large context window.
-                // Existing models: preserve whatever the user chose.
-                IsHidden     = existing?.IsHidden ?? !IsLargeContextModel(id),
+                // All GitHub Models share the same ~8k token per-request cap, so
+                // there is no meaningful reason to hide "small context" models —
+                // the 28 000-char diff limit applies equally to every model.
+                // New models: visible by default; existing models: preserve user choice.
+                IsHidden     = existing?.IsHidden ?? false,
             });
         }
         _models         = merged;
         LastFetchedAt   = DateTime.UtcNow;
         IsUsingDefaults = !fromApi;
         Save();
-    }
-
-    // Models known to have a large enough context window (≥32k tokens) to handle full diffs.
-    // Everything else (Llama, Phi, Mistral, Cohere, etc.) is hidden by default — the user can
-    // unhide them in Settings for small diffs.
-    private static bool IsLargeContextModel(string modelId)
-    {
-        var s = modelId.ToLowerInvariant();
-        return s.StartsWith("gpt-4o")
-            || s.StartsWith("o1")
-            || s.StartsWith("o3")
-            || s.Contains("claude-3-5")
-            || s.Contains("claude-3-7")
-            || s.Contains("claude-3-opus")
-            || s.Contains("gpt-4-turbo")
-            || s.Contains("command-r");   // Cohere Command R has 128k context
     }
 
     private void ApplyDefaults()
@@ -207,9 +196,6 @@ public class CopilotModelService : ICopilotModelService
         var m = _models.FirstOrDefault(x => x.Id == modelId);
         return m?.DisplayName ?? InferName(modelId);
     }
-
-    public int GetEffectiveDiffCharLimit(string modelId) =>
-        IsLargeContextModel(modelId) ? 60_000 : 24_000;
 
     // ── Model ID extraction ───────────────────────────────────────────────
 

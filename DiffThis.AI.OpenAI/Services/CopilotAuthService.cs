@@ -1,217 +1,338 @@
-using System.Diagnostics;
 using System.Text.Json;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.OpenAI.Services;
 
+/// <summary>
+/// Authenticates with GitHub Copilot via the GitHub Device-Code OAuth flow, then
+/// exchanges the resulting GitHub OAuth token for a short-lived Copilot session
+/// token (via <c>api.github.com/copilot_internal/v2/token</c>).
+///
+/// The device flow uses client ID <c>Iv1.b507a08c87ecfe98</c> — the same OAuth
+/// app used by VS Code and copilot.vim — so the resulting token is recognised by
+/// the Copilot token-exchange endpoint.
+/// </summary>
 public class CopilotAuthService : ICopilotAuthService
 {
-    private const string GhExePrefKey = "gh_exe_path";
+    // The GitHub Copilot OAuth App client ID used by all official Copilot clients.
+    // Tokens obtained via other clients (e.g. the `gh` CLI) are rejected by the
+    // Copilot session-token exchange endpoint.
+    private const string ClientId = "Iv1.b507a08c87ecfe98";
 
-    // GitHub OAuth tokens are long-lived; cache for 1 hour so we don't
-    // spawn a subprocess on every model request.
-    private string?  _cachedToken;
-    private DateTime _cacheExpiry = DateTime.MinValue;
-    private string?  _ghExe;
+    // Preferences keys
+    private const string OAuthTokenKey = "copilot_oauth_token";
+    private const string UsernameKey   = "copilot_username";
 
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    // GitHub OAuth endpoints
+    private const string DeviceCodeUrl  = "https://github.com/login/device/code";
+    private const string AccessTokenUrl = "https://github.com/login/oauth/access_token";
+
+    // Copilot session-token exchange
+    private const string SessionTokenUrl = "https://api.github.com/copilot_internal/v2/token";
+
     private readonly HttpClient    _http = new();
+    private readonly SemaphoreSlim _lock = new(1, 1);
+
+    // Short-lived session token (in-memory; not persisted)
+    private string?  _sessionToken;
+    private DateTime _sessionTokenExpiry = DateTime.MinValue;
+
+    // Active device-flow poll cancellation
+    private CancellationTokenSource? _pollCts;
 
     public CopilotAuthState State     { get; private set; } = CopilotAuthState.NotFound;
     public string?          Username  { get; private set; }
     public string?          LastError { get; private set; }
 
-    public CopilotAuthService() => _ = RefreshAsync();
+    public event Action? StateChanged;
 
-    // ── gh.exe discovery ──────────────────────────────────────────────────
-
-    private string ResolveGhExe()
+    public CopilotAuthService()
     {
-        if (_ghExe is not null && File.Exists(_ghExe)) return _ghExe;
+        Username = Preferences.Get(UsernameKey, (string?)null);
 
-        var cached = Preferences.Get(GhExePrefKey, "");
-        if (!string.IsNullOrEmpty(cached) && File.Exists(cached))
-            return _ghExe = cached;
-
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var candidates = new[]
-        {
-            Path.Combine(home, "AppData", "Local", "Programs", "GitHub CLI", "gh.exe"),
-            @"C:\Program Files\GitHub CLI\gh.exe",
-            @"C:\Program Files (x86)\GitHub CLI\gh.exe",
-            Path.Combine(home, "scoop", "shims", "gh.exe"),
-            Path.Combine(home, "AppData", "Local", "Microsoft", "WinGet", "Links", "gh.exe"),
-            @"C:\ProgramData\chocolatey\bin\gh.exe",
-        };
-        foreach (var c in candidates)
-            if (File.Exists(c)) { Preferences.Set(GhExePrefKey, c); return _ghExe = c; }
-
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathEnv.Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            foreach (var name in new[] { "gh.exe", "gh.cmd" })
-            {
-                var full = Path.Combine(dir.Trim(), name);
-                if (File.Exists(full)) { Preferences.Set(GhExePrefKey, full); return _ghExe = full; }
-            }
-        }
-
-        var found = WhereGh();
-        if (found is not null) { Preferences.Set(GhExePrefKey, found); return _ghExe = found; }
-
-        return _ghExe = "gh";
+        // If we have a stored OAuth token, assume authenticated until exchange proves otherwise.
+        var stored = Preferences.Get(OAuthTokenKey, (string?)null);
+        if (!string.IsNullOrEmpty(stored))
+            State = CopilotAuthState.Authenticated;
     }
 
-    private static string? WhereGh()
-    {
-        Process? p = null;
-        try
-        {
-            p = Process.Start(new ProcessStartInfo("cmd.exe")
-            {
-                Arguments = "/c where gh",
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-            });
-            if (p is null) return null;
-            var output = p.StandardOutput.ReadToEnd().Trim();
-            p.WaitForExit();
-            var first = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-                              .FirstOrDefault()?.Trim();
-            return first is not null && File.Exists(first) ? first : null;
-        }
-        catch { return null; }
-        finally { p?.Dispose(); }
-    }
+    // ── Session token ─────────────────────────────────────────────────────
 
-    private static ProcessStartInfo MakeGhPsi(string exe)
-    {
-        var ext = Path.GetExtension(exe).ToLowerInvariant();
-        if (ext is ".cmd" or ".bat")
-        {
-            var psi = new ProcessStartInfo("cmd.exe")
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-                WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            };
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(exe);
-            return psi;
-        }
-        return new ProcessStartInfo(exe)
-        {
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardOutput = true, RedirectStandardError = true,
-            WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        };
-    }
-
-    // ── Public API ────────────────────────────────────────────────────────
-
-    /// Returns the GitHub OAuth token from `gh auth token`.
-    /// This is used directly as the Bearer token for GitHub Models API calls.
     public async Task<string?> GetSessionTokenAsync(CancellationToken ct = default)
     {
+        // Fast path — return cached token while still valid
+        if (_sessionToken is not null && DateTime.UtcNow < _sessionTokenExpiry)
+            return _sessionToken;
+
         await _lock.WaitAsync(ct);
         try
         {
-            if (_cachedToken is not null && DateTime.UtcNow < _cacheExpiry)
-                return _cachedToken;
+            if (_sessionToken is not null && DateTime.UtcNow < _sessionTokenExpiry)
+                return _sessionToken;
 
-            var exe = ResolveGhExe();
-            var (token, error) = await RunGhAuthTokenAsync(exe, ct);
-
-            if (token is null)
+            var oauthToken = Preferences.Get(OAuthTokenKey, (string?)null);
+            if (string.IsNullOrEmpty(oauthToken))
             {
-                State      = CopilotAuthState.NotFound;
-                LastError  = error;
+                State = CopilotAuthState.NotFound;
                 return null;
             }
 
-            _cachedToken = token;
-            _cacheExpiry = DateTime.UtcNow.AddHours(1);
-            State        = CopilotAuthState.Authenticated;
-            LastError    = null;
-
-            if (Username is null)
-                _ = TryReadUsernameAsync(token);
-
-            return _cachedToken;
-        }
-        catch (Exception ex)
-        {
-            State     = CopilotAuthState.NotFound;
-            LastError = ex.Message;
-            return null;
+            return await ExchangeForSessionTokenAsync(oauthToken, ct);
         }
         finally { _lock.Release(); }
     }
 
-    public async Task<bool> RefreshAsync(CancellationToken ct = default)
+    private async Task<string?> ExchangeForSessionTokenAsync(string oauthToken, CancellationToken ct)
     {
-        _cachedToken = null;
-        _cacheExpiry = DateTime.MinValue;
-        Username     = null;
-        LastError    = null;
-        _ghExe       = null;
-        await GetSessionTokenAsync(ct);
-        return State == CopilotAuthState.Authenticated;
-    }
-
-    private static async Task<(string? token, string? error)> RunGhAuthTokenAsync(
-        string exe, CancellationToken ct)
-    {
-        Process? proc = null;
         try
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var req = new HttpRequestMessage(HttpMethod.Get, SessionTokenUrl);
+            req.Headers.Add("Authorization", $"token {oauthToken}");
+            req.Headers.Add("User-Agent",    "DiffThis/1.0");
+            req.Headers.Add("Accept",        "application/json");
 
-            var psi = MakeGhPsi(exe);
-            psi.ArgumentList.Add("auth");
-            psi.ArgumentList.Add("token");
+            var resp = await _http.SendAsync(req, ct);
 
-            proc = Process.Start(psi);
-            if (proc is null) return (null, $"Failed to start process: {exe}");
-
-            var stdout = await proc.StandardOutput.ReadToEndAsync(cts.Token);
-            var stderr = await proc.StandardError.ReadToEndAsync(cts.Token);
-            await proc.WaitForExitAsync(cts.Token);
-
-            if (proc.ExitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+            if (!resp.IsSuccessStatusCode)
             {
-                var msg = string.IsNullOrWhiteSpace(stderr)
-                    ? $"Exit code {proc.ExitCode}"
-                    : stderr.Trim();
-                return (null, $"`gh auth token` failed: {msg}. Is GitHub CLI installed?");
+                if ((int)resp.StatusCode is 401 or 403)
+                {
+                    // Token was revoked — force re-authentication
+                    Preferences.Remove(OAuthTokenKey);
+                    _sessionToken = null;
+                    State         = CopilotAuthState.NotFound;
+                    LastError     = "GitHub Copilot session expired. Please sign in again.";
+                    StateChanged?.Invoke();
+                }
+                else
+                {
+                    LastError = $"Session token exchange failed: HTTP {(int)resp.StatusCode}";
+                }
+                return null;
             }
 
-            return (stdout.Trim(), null);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("token", out var tokenProp))
+            {
+                LastError = "Unexpected response from Copilot token exchange.";
+                return null;
+            }
+
+            _sessionToken = tokenProp.GetString();
+
+            // Refresh ~60 s before the server-specified expiry
+            _sessionTokenExpiry = root.TryGetProperty("refresh_in", out var refreshIn)
+                ? DateTime.UtcNow.AddSeconds(refreshIn.GetInt32() - 60)
+                : DateTime.UtcNow.AddMinutes(24);
+
+            LastError = null;
+            if (State != CopilotAuthState.Authenticated)
+            {
+                State = CopilotAuthState.Authenticated;
+                StateChanged?.Invoke();
+            }
+
+            return _sessionToken;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return (null, $"Could not run `gh auth token`: {ex.Message}");
-        }
-        finally
-        {
-            try { if (proc is { HasExited: false }) proc.Kill(); } catch { }
-            proc?.Dispose();
+            LastError = $"Session token exchange error: {ex.Message}";
+            return null;
         }
     }
 
-    private async Task TryReadUsernameAsync(string ghToken)
+    // ── Device-code flow ──────────────────────────────────────────────────
+
+    public async Task<DeviceFlowInfo?> StartDeviceFlowAsync(CancellationToken ct = default)
+    {
+        // Cancel any in-progress flow
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, DeviceCodeUrl);
+            req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = ClientId,
+                ["scope"]     = "read:user",
+            });
+            req.Headers.Add("Accept",     "application/json");
+            req.Headers.Add("User-Agent", "DiffThis/1.0");
+
+            var resp = await _http.SendAsync(req, ct);
+            resp.EnsureSuccessStatusCode();
+
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            var deviceCode = root.GetProperty("device_code").GetString()!;
+            var userCode   = root.GetProperty("user_code").GetString()!;
+            var verifyUri  = root.GetProperty("verification_uri").GetString()!;
+            var expiresIn  = root.GetProperty("expires_in").GetInt32();
+            var interval   = root.GetProperty("interval").GetInt32();
+
+            State     = CopilotAuthState.PendingDeviceFlow;
+            LastError = null;
+            StateChanged?.Invoke();
+
+            // Kick off background polling — fires StateChanged when done
+            _pollCts = new CancellationTokenSource();
+            _ = PollForOAuthTokenAsync(deviceCode, interval, expiresIn, _pollCts.Token);
+
+            return new DeviceFlowInfo(userCode, verifyUri, expiresIn, interval);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            State     = CopilotAuthState.NotFound;
+            LastError = $"Failed to start sign-in: {ex.Message}";
+            StateChanged?.Invoke();
+            return null;
+        }
+    }
+
+    private async Task PollForOAuthTokenAsync(
+        string deviceCode, int interval, int expiresIn, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(expiresIn);
+
+        while (!ct.IsCancellationRequested && DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Max(interval, 5)), ct);
+            }
+            catch (OperationCanceledException) { break; }
+
+            if (ct.IsCancellationRequested) break;
+
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, AccessTokenUrl);
+                req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"]   = ClientId,
+                    ["device_code"] = deviceCode,
+                    ["grant_type"]  = "urn:ietf:params:oauth:grant-type:device_code",
+                });
+                req.Headers.Add("Accept",     "application/json");
+                req.Headers.Add("User-Agent", "DiffThis/1.0");
+
+                var resp = await _http.SendAsync(req, ct);
+                if (!resp.IsSuccessStatusCode) continue;
+
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+
+                // authorization_pending / slow_down / expired_token
+                if (root.TryGetProperty("error", out var errProp))
+                {
+                    if (errProp.GetString() == "slow_down"
+                        && root.TryGetProperty("interval", out var newInt))
+                        interval = newInt.GetInt32();
+                    continue;
+                }
+
+                if (!root.TryGetProperty("access_token", out var tokenProp)) continue;
+                var oauthToken = tokenProp.GetString();
+                if (string.IsNullOrEmpty(oauthToken)) continue;
+
+                // Success — store token and update state
+                Preferences.Set(OAuthTokenKey, oauthToken);
+
+                // Invalidate any cached session token so next call exchanges fresh
+                _sessionToken       = null;
+                _sessionTokenExpiry = DateTime.MinValue;
+
+                State     = CopilotAuthState.Authenticated;
+                LastError = null;
+                StateChanged?.Invoke();
+
+                // Fetch username asynchronously
+                _ = TryReadUsernameAsync(oauthToken);
+                return;
+            }
+            catch (OperationCanceledException) { break; }
+            catch { /* keep polling on transient errors */ }
+        }
+
+        // Flow expired or was cancelled — only reset if we're still pending
+        if (State == CopilotAuthState.PendingDeviceFlow)
+        {
+            State     = CopilotAuthState.NotFound;
+            LastError = ct.IsCancellationRequested
+                ? "Sign-in was cancelled."
+                : "Sign-in timed out. Please try again.";
+            StateChanged?.Invoke();
+        }
+    }
+
+    // ── Refresh / SignOut ─────────────────────────────────────────────────
+
+    public Task<bool> RefreshAsync(CancellationToken ct = default)
+    {
+        _sessionToken       = null;
+        _sessionTokenExpiry = DateTime.MinValue;
+
+        var stored = Preferences.Get(OAuthTokenKey, (string?)null);
+        if (string.IsNullOrEmpty(stored))
+        {
+            State = CopilotAuthState.NotFound;
+            StateChanged?.Invoke();
+            return Task.FromResult(false);
+        }
+
+        State = CopilotAuthState.Authenticated;
+        StateChanged?.Invoke();
+        return Task.FromResult(true);
+    }
+
+    public void SignOut()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+
+        _sessionToken       = null;
+        _sessionTokenExpiry = DateTime.MinValue;
+
+        Preferences.Remove(OAuthTokenKey);
+        Preferences.Remove(UsernameKey);
+
+        Username  = null;
+        State     = CopilotAuthState.NotFound;
+        LastError = null;
+        StateChanged?.Invoke();
+    }
+
+    // ── Username fetch ────────────────────────────────────────────────────
+
+    private async Task TryReadUsernameAsync(string oauthToken)
     {
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/user");
-            req.Headers.Add("Authorization", $"token {ghToken}");
-            req.Headers.Add("User-Agent", "DiffThis/1.0");
+            req.Headers.Add("Authorization", $"token {oauthToken}");
+            req.Headers.Add("User-Agent",    "DiffThis/1.0");
+            req.Headers.Add("Accept",        "application/vnd.github+json");
+
             var resp = await _http.SendAsync(req, cts.Token);
             if (!resp.IsSuccessStatusCode) return;
+
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
-            if (doc.RootElement.TryGetProperty("login", out var login))
-                Username = login.GetString();
+            if (!doc.RootElement.TryGetProperty("login", out var login)) return;
+
+            Username = login.GetString();
+            Preferences.Set(UsernameKey, Username ?? "");
+            StateChanged?.Invoke();
         }
         catch { /* best effort */ }
     }

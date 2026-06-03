@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using System.Text.Json;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Claude.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Claude.Services;
 
 public class ClaudeAuthService : IClaudeAuthService
 {

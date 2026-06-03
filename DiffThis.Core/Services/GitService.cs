@@ -1,9 +1,9 @@
 using System.Text;
 using CliWrap;
 using CliWrap.Buffered;
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 public class GitService : IGitService
 {
@@ -59,6 +59,16 @@ public class GitService : IGitService
             .OrderBy(b => b.StartsWith("origin/") ? 1 : 0)
             .ThenBy(b => b)
             .ToList();
+    }
+
+    public async Task<bool> FetchAsync(string repositoryPath, CancellationToken ct = default)
+    {
+        var result = await Cli.Wrap("git")
+            .WithArguments(["fetch", "--prune"])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteAsync(ct);
+        return result.ExitCode == 0;
     }
 
     public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default)

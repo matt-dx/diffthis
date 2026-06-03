@@ -104,6 +104,8 @@
     }
 </div>
 
+@implements IDisposable
+
 @code {
     [SupplyParameterFromQuery(Name = "path")]
     public string? RepoPath { get; set; }
@@ -126,6 +128,8 @@
     private List<CommitInfo> compareCommits = [];
     private bool baseCommitsLoading;
     private bool compareCommitsLoading;
+
+    private CancellationTokenSource? _fetchCts;
 
     private bool CanCompare
     {
@@ -185,6 +189,45 @@
         }
         catch (Exception ex) { loadError = ex.Message; }
         finally { loading = false; }
+
+        _ = FetchAndRefreshBranchesAsync();
+    }
+
+    private async Task FetchAndRefreshBranchesAsync()
+    {
+        _fetchCts?.Cancel();
+        _fetchCts = new CancellationTokenSource();
+        var ct = _fetchCts.Token;
+
+        if (string.IsNullOrEmpty(RepoPath)) return;
+        try
+        {
+            var fetched = await GitService.FetchAsync(RepoPath, ct);
+            if (!fetched || ct.IsCancellationRequested) return;
+
+            var updated = await GitService.GetBranchesAsync(RepoPath, ct);
+            if (ct.IsCancellationRequested) return;
+
+            var newBranches = updated.Except(branches).ToList();
+            if (newBranches.Count == 0) return;
+
+            branches = updated;
+
+            // Restore current selections if they're still valid
+            if (!branches.Contains(baseBranch ?? ""))
+                baseBranch = branches.FirstOrDefault(b => b is "main" or "master") ?? branches.FirstOrDefault();
+            if (!branches.Contains(compareBranch ?? ""))
+                compareBranch = branches.Count > 1 ? branches[1] : branches.FirstOrDefault();
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
     }
 
     private async Task OnBaseBranchChanged()

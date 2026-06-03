@@ -1,19 +1,19 @@
-using Azure;
-using Azure.AI.Inference;
-using DiffThis.Models;
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using DiffThis.AI.Shared.Services;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.OpenAI.Services;
 
 public class CopilotService : ICopilotService
 {
+    private static readonly Uri _endpoint =
+        new("https://api.githubcopilot.com/chat/completions");
+
     private readonly ICopilotAuthService _auth;
     private readonly PromptService       _prompts;
-
-    private static readonly Uri _endpoint =
-        new("https://models.inference.ai.azure.com");
-
-    private ChatCompletionsClient? _client;
-    private string?                _clientToken;
+    private readonly HttpClient          _http = new();
 
     public CopilotService(ICopilotAuthService auth, PromptService prompts)
     {
@@ -22,60 +22,94 @@ public class CopilotService : ICopilotService
     }
 
     public Task<string> ReviewDiffAsync(DiffResult diff, string modelId, CancellationToken ct = default)
-        => CallAsync(_prompts.BuildReviewPrompt(diff), modelId, ct);
+    {
+        var (system, user) = _prompts.BuildReviewPromptParts(diff);
+        return CallAsync(system, user, modelId, ct);
+    }
 
     public Task<string> ExplainDiffAsync(DiffResult diff, string modelId, CancellationToken ct = default)
-        => CallAsync(_prompts.BuildExplainPrompt(diff), modelId, ct);
+    {
+        var (system, user) = _prompts.BuildExplainPromptParts(diff);
+        return CallAsync(system, user, modelId, ct);
+    }
 
-    private async Task<string> CallAsync(string prompt, string modelId, CancellationToken ct)
+    private async Task<string> CallAsync(string system, string user, string modelId, CancellationToken ct)
     {
         var token = await _auth.GetSessionTokenAsync(ct)
             ?? throw new UnauthorizedAccessException(
-                "GitHub Models is not authenticated. Run `gh auth login` in a terminal.");
+                "GitHub Copilot is not signed in. Open Settings to sign in.");
 
-        if (_client is null || _clientToken != token)
+        var body = JsonSerializer.Serialize(new
         {
-            _client      = new ChatCompletionsClient(_endpoint, new AzureKeyCredential(token));
-            _clientToken = token;
-        }
+            model    = modelId,
+            messages = new[]
+            {
+                new { role = "system", content = system },
+                new { role = "user",   content = user   },
+            },
+        });
 
-        var client = _client;
+        using var req = new HttpRequestMessage(HttpMethod.Post, _endpoint);
+        req.Headers.Add("Authorization",         $"Bearer {token}");
+        req.Headers.Add("Copilot-Integration-Id", "vscode-chat");
+        req.Headers.Add("User-Agent",             "DiffThis/1.0");
+        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        ChatCompletionsOptions options = new()
-        {
-            Model    = modelId,
-            Messages = { new ChatRequestUserMessage(prompt) },
-        };
-
-        Response<ChatCompletions> response;
+        HttpResponseMessage resp;
         try
         {
-            response = await client.CompleteAsync(options, ct);
+            resp = await _http.SendAsync(req, ct);
         }
-        catch (RequestFailedException ex) when (ex.Status == 401)
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
         {
-            throw new UnauthorizedAccessException(
-                "GitHub Models: token rejected. Run `gh auth login` in a terminal.", ex);
+            throw new InvalidOperationException($"GitHub Copilot request failed: {ex.Message}", ex);
         }
-        catch (RequestFailedException ex) when (ex.Status == 429)
+
+        var responseBody = await resp.Content.ReadAsStringAsync(ct);
+
+        if (!resp.IsSuccessStatusCode)
         {
-            throw new HttpRequestException(
-                "GitHub Models rate limit reached. Wait a moment and try again.", ex);
+            switch (resp.StatusCode)
+            {
+                case HttpStatusCode.Unauthorized:
+                    throw new UnauthorizedAccessException(
+                        "GitHub Copilot session token rejected. Open Settings to sign in again.");
+
+                case HttpStatusCode.TooManyRequests:
+                    throw new HttpRequestException(
+                        "GitHub Copilot rate limit reached. Wait a moment and try again.");
+
+                case HttpStatusCode.RequestEntityTooLarge:
+                    throw new InvalidOperationException(
+                        $"Diff is too large for \"{modelId}\".");
+
+                default:
+                    if (responseBody.Contains("tokens_limit_reached"))
+                        throw new InvalidOperationException(
+                            $"Diff is too large for \"{modelId}\".");
+                    throw new InvalidOperationException(
+                        $"GitHub Copilot {(int)resp.StatusCode}: {responseBody}");
+            }
         }
-        catch (RequestFailedException ex) when (ex.Status == 413 || ex.Message.Contains("tokens_limit_reached"))
+
+        // Parse OpenAI-format response
+        try
+        {
+            using var doc  = JsonDocument.Parse(responseBody);
+            var choices    = doc.RootElement.GetProperty("choices");
+            var content    = choices[0].GetProperty("message").GetProperty("content").GetString();
+
+            if (string.IsNullOrWhiteSpace(content))
+                throw new InvalidOperationException("GitHub Copilot returned an empty response.");
+
+            return content.Trim();
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException
+                                       and not OperationCanceledException)
         {
             throw new InvalidOperationException(
-                $"Diff is too large for \"{modelId}\". Use a model with a larger context window.", ex);
+                $"Could not parse GitHub Copilot response: {ex.Message}\n{responseBody}", ex);
         }
-        catch (RequestFailedException ex)
-        {
-            throw new InvalidOperationException($"GitHub Models {ex.Status}: {ex.Message}", ex);
-        }
-
-        var text = response.Value.Content?.Trim();
-        if (string.IsNullOrEmpty(text))
-            throw new InvalidOperationException("GitHub Models returned an empty response.");
-
-        return text;
     }
 }

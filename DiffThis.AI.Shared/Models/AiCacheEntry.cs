@@ -1,4 +1,4 @@
-namespace DiffThis.Models;
+namespace DiffThis.AI.Shared.Models;
 
 public class AiCacheEntry
 {

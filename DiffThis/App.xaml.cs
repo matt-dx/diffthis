@@ -1,4 +1,4 @@
-using DiffThis.Services;
+using DiffThis.Core.Services;
 
 namespace DiffThis;
 

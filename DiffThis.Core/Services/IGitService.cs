@@ -1,6 +1,6 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 public interface IGitService
 {
@@ -8,4 +8,5 @@ public interface IGitService
     Task<List<string>> GetBranchesAsync(string repositoryPath, CancellationToken ct = default);
     Task<List<CommitInfo>> GetCommitsAsync(string repositoryPath, string branch, int maxCount = 50, CancellationToken ct = default);
     Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default);
+    Task<bool> FetchAsync(string repositoryPath, CancellationToken ct = default);
 }

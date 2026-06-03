@@ -1,15 +1,15 @@
 using System.Reflection;
 using System.Text;
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Shared.Services;
 
 /// <summary>
 /// Loads and renders prompt templates.
 ///
 /// Resolution order:
 ///   1. User override: %LOCALAPPDATA%\DiffThis\prompts\{name}.md
-///   2. Embedded default: DiffThis.Prompts.{name}.md
+///   2. Embedded default: DiffThis.AI.Shared.Prompts.{name}.md
 ///
 /// Templates use {{Variable}} placeholders (case-sensitive).
 /// </summary>
@@ -25,6 +25,21 @@ public class PromptService
     public string BuildExplainPrompt(DiffResult diff, int maxDiffChars = 60_000)
         => Render(LoadTemplate("explain"), diff, maxDiffChars);
 
+    /// <summary>
+    /// Returns the prompt split into (System, User) parts for APIs that accept
+    /// separate system and user messages.
+    /// <para>
+    /// <c>System</c> contains the instructions and diff metadata header (no diff lines).
+    /// <c>User</c>   contains only the raw diff content.
+    /// </para>
+    /// </summary>
+    public (string System, string User) BuildReviewPromptParts(DiffResult diff, int maxDiffChars = 60_000)
+        => RenderParts(LoadTemplate("review"), diff, maxDiffChars);
+
+    /// <inheritdoc cref="BuildReviewPromptParts"/>
+    public (string System, string User) BuildExplainPromptParts(DiffResult diff, int maxDiffChars = 60_000)
+        => RenderParts(LoadTemplate("explain"), diff, maxDiffChars);
+
     // ── Template loading ──────────────────────────────────────────────────
 
     private static string LoadTemplate(string name)
@@ -33,7 +48,7 @@ public class PromptService
         if (File.Exists(userFile))
             return File.ReadAllText(userFile);
 
-        var resourceName = $"DiffThis.Prompts.{name}.md";
+        var resourceName = $"DiffThis.AI.Shared.Prompts.{name}.md";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Embedded prompt resource '{resourceName}' not found.");
         using var reader = new StreamReader(stream);
@@ -53,6 +68,27 @@ public class PromptService
             .Replace("{{Additions}}", diff.TotalAdditions.ToString())
             .Replace("{{Deletions}}", diff.TotalDeletions.ToString())
             .Replace("{{DiffContent}}", diffContent);
+    }
+
+    /// <summary>
+    /// Splits a template into a system part (instructions + metadata, no diff lines)
+    /// and a user part (raw diff content only).
+    /// </summary>
+    private static (string System, string User) RenderParts(string template, DiffResult diff, int maxDiffChars)
+    {
+        var diffContent = BuildDiffContent(diff, maxDiffChars);
+
+        var system = template
+            .Replace("{{RepositoryName}}", diff.RepositoryName)
+            .Replace("{{BaseDisplay}}", diff.BaseDisplay)
+            .Replace("{{CompareDisplay}}", diff.CompareDisplay)
+            .Replace("{{FileCount}}", diff.Files.Count.ToString())
+            .Replace("{{Additions}}", diff.TotalAdditions.ToString())
+            .Replace("{{Deletions}}", diff.TotalDeletions.ToString())
+            .Replace("{{DiffContent}}", string.Empty)
+            .TrimEnd();
+
+        return (system, diffContent);
     }
 
     private static string BuildDiffContent(DiffResult diff, int maxChars)

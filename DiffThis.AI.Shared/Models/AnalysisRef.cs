@@ -1,6 +1,6 @@
-using DiffThis.Services;
+using DiffThis.AI.Shared.Services;
 
-namespace DiffThis.Models;
+namespace DiffThis.AI.Shared.Models;
 
 public enum RefCategory { Bug, LogicError, Security, Other }
 

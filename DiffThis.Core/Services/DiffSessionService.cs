@@ -1,6 +1,6 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 // Shared singleton for passing DiffResult between pages without serializing to query params.
 public class DiffSessionService

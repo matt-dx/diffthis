@@ -1,9 +1,10 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Shared.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Claude.Services;
 
 public partial class ClaudeModelService : IClaudeModelService
 {

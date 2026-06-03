@@ -1,7 +1,9 @@
 using System.Diagnostics;
-using DiffThis.Models;
+using DiffThis.Core.Models;
+using DiffThis.AI.Claude.Models;
+using DiffThis.AI.Shared.Services;
 
-namespace DiffThis.Services;
+namespace DiffThis.AI.Claude.Services;
 
 /// Thrown when the claude CLI rejects a model ID as unknown or unavailable.
 public class ModelUnavailableException(string modelId)

@@ -1,6 +1,6 @@
-using DiffThis.Models;
+using DiffThis.Core.Models;
 
-namespace DiffThis.Services;
+namespace DiffThis.Core.Services;
 
 public interface ISettingsService
 {
