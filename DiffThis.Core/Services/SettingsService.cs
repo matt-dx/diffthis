@@ -16,6 +16,7 @@ public class SettingsService : ISettingsService
     private const string PreferredReviewModelKey  = "preferred_review_model";
     private const string DiffContextLinesKey      = "diff_context_lines";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
+    private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string WindowXKey             = "window_x";
     private const string WindowYKey             = "window_y";
@@ -128,6 +129,12 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(MainViewSideBySideKey, false);
         set => Preferences.Set(MainViewSideBySideKey, value);
+    }
+
+    public string OllamaEndpointsJson
+    {
+        get => Preferences.Get(OllamaEndpointsKey, "[]");
+        set => Preferences.Set(OllamaEndpointsKey, value);
     }
 
     public bool AnalysisLinksEnabled

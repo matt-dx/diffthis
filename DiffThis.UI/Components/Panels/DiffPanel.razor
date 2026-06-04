@@ -1,9 +1,12 @@
 @inject ISettingsService Settings
+@inject IGitService GitService
 @inject IAnalysisLinkService LinkService
 @inject IClaudeModelService ModelService
 @inject DiffSessionService Session
+@inject AiCacheService AiCache
 @inject IJSRuntime JS
 @implements IDisposable
+@using DiffThis.AI.Shared.Services
 
 @if (Diff is not null)
 {
@@ -78,6 +81,22 @@
                             <span class="add">+@file.Additions</span>
                             <span class="del">-@file.Deletions</span>
                         </span>
+                        @if (!file.IsBinary && file.Hunks.Count > 0
+                             && file.Status != DiffFileStatus.Added
+                             && file.Status != DiffFileStatus.Deleted)
+                        {
+                            var ctx = GetFileContext(fi);
+                            var loading = _contextLoading.Contains(fi);
+                            <div class="context-ctrl" @onclick:stopPropagation>
+                                <button class="ctx-btn" title="Less context"
+                                        disabled="@(loading || ctx <= ContextSteps[0])"
+                                        @onclick="() => ChangeContext(fi, -1)">−</button>
+                                <span class="ctx-label" title="Context lines">@(loading ? "…" : ctx == int.MaxValue ? "all" : ctx.ToString())</span>
+                                <button class="ctx-btn" title="@(ctx == ContextSteps[^2] ? "Show full file" : "More context")"
+                                        disabled="@(loading || ctx >= ContextSteps[^1])"
+                                        @onclick="() => ChangeContext(fi, +1)">+</button>
+                            </div>
+                        }
                         @if (fileRefs.Count > 0)
                         {
                             <!-- Show one icon per unique Category; MinBy picks lowest int value = highest severity (Critical=0) -->
@@ -105,7 +124,8 @@
                     {
                         var hlLines = _highlighted.TryGetValue(fi, out var hl) ? hl : null;
                         var lineIdx = 0;
-                        foreach (var hunk in file.Hunks)
+                        var hunks = _hunkOverrides.TryGetValue(fi, out var oh) ? oh : file.Hunks;
+                        foreach (var hunk in hunks)
                         {
                             <div class="hunk-header">
                                 @($"@@ -{hunk.OldStart},{hunk.OldCount} +{hunk.NewStart},{hunk.NewCount} @@")
@@ -193,11 +213,19 @@
     [Parameter] public bool SidebarCollapsed { get; set; }
     [Parameter] public EventCallback<bool> SidebarCollapsedChanged { get; set; }
 
+    private static readonly int[] ContextSteps = [0, 3, 10, 25, 50, int.MaxValue];
+
     private int _selectedIndex = -1;
     private Dictionary<int, List<string>> _highlighted = [];
     private bool _highlighting;
+    private bool _rehydrating;
     private DiffResult? _lastDiff;
     private (int fileIndex, int? lineFrom, int? lineTo)? _lastFocus;
+
+    // Per-file context line overrides
+    private Dictionary<int, int> _fileContextLines = [];
+    private Dictionary<int, List<DiffHunk>> _hunkOverrides = [];
+    private HashSet<int> _contextLoading = [];
 
     // Context menu state
     private List<AnalysisRef>? _menuRefs;
@@ -213,8 +241,19 @@
             _lastDiff = Diff;
             _selectedIndex = -1;
             Session.ResetDiffState();
+            if (Diff is not null)
+            {
+                var saved = AiCache.GetHiddenFileIndices(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch);
+                foreach (var i in saved) Session.HiddenFiles.Add(i);
+            }
             _highlighted.Clear();
-            _highlighting = Diff is not null;
+            _hunkOverrides.Clear();
+            _contextLoading.Clear();
+            _fileContextLines = Diff is not null
+                ? new Dictionary<int, int>(AiCache.GetFileContextLines(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch))
+                : [];
+            _highlighting  = Diff is not null;
+            _rehydrating   = _fileContextLines.Count > 0 && Diff is not null;
         }
     }
 
@@ -227,6 +266,13 @@
             try { await Task.Run(ComputeHighlighting); }
             catch { /* partial results are fine */ }
             await InvokeAsync(StateHasChanged);
+        }
+
+        // Re-fetch hunks for files with saved context line overrides
+        if (_rehydrating)
+        {
+            _rehydrating = false;
+            await RehydrateContextOverridesAsync();
         }
 
         // Handle pending focus from AnalysisPanel link click
@@ -273,6 +319,82 @@
 
     private void CloseContextMenu() => _menuRefs = null;
 
+    private async Task RehydrateContextOverridesAsync()
+    {
+        if (Diff is null) return;
+        foreach (var (fi, savedCtx) in _fileContextLines)
+        {
+            if (fi >= Diff.Files.Count) continue;
+            var file = Diff.Files[fi];
+            if (file.IsBinary || file.Hunks.Count == 0) continue;
+            if (file.Status is DiffFileStatus.Added or DiffFileStatus.Deleted) continue;
+
+            try
+            {
+                var filePath = string.IsNullOrEmpty(file.NewPath) ? file.OldPath : file.NewPath;
+                var gitContext = savedCtx == int.MaxValue ? 100_000 : savedCtx;
+                var hunks = await GitService.GetFileHunksAsync(
+                    Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext);
+                _hunkOverrides[fi] = hunks;
+
+                var lang = SyntaxHighlighter.GetLanguage(file.FileName);
+                if (lang is not null && hunks.Count > 0)
+                {
+                    var contents = hunks.SelectMany(h => h.Lines.Select(l => l.Content)).ToArray();
+                    _highlighted[fi] = SyntaxHighlighter.HighlightLines(contents, lang);
+                }
+            }
+            catch { /* leave default hunks */ }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private int GetFileContext(int fi) =>
+        _fileContextLines.TryGetValue(fi, out var v) ? v : Settings.DiffContextLines;
+
+    private async Task ChangeContext(int fi, int direction)
+    {
+        if (Diff is null) return;
+        var current = GetFileContext(fi);
+        var idx = Array.BinarySearch(ContextSteps, current);
+        if (idx < 0) idx = ~idx; // insert point if not found
+        var next = direction > 0
+            ? (idx < ContextSteps.Length - 1 ? ContextSteps[idx + 1] : current)
+            : (idx > 0 ? ContextSteps[idx - 1] : current);
+        if (next == current) return;
+
+        _fileContextLines[fi] = next;
+        AiCache.SetFileContextLine(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, fi, next);
+        _contextLoading.Add(fi);
+        StateHasChanged();
+
+        try
+        {
+            var file = Diff.Files[fi];
+            var filePath = string.IsNullOrEmpty(file.NewPath) ? file.OldPath : file.NewPath;
+            var gitContext = next == int.MaxValue ? 100_000 : next;
+            var hunks = await GitService.GetFileHunksAsync(
+                Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext);
+            _hunkOverrides[fi] = hunks;
+
+            // Re-highlight the file with updated hunks
+            var lang = SyntaxHighlighter.GetLanguage(file.FileName);
+            if (lang is not null && hunks.Count > 0)
+            {
+                var contents = hunks.SelectMany(h => h.Lines.Select(l => l.Content)).ToArray();
+                var highlighted = SyntaxHighlighter.HighlightLines(contents, lang);
+                // Rebuild per-file line list in hunk order
+                _highlighted[fi] = highlighted;
+            }
+        }
+        catch { /* leave previous hunks */ }
+        finally
+        {
+            _contextLoading.Remove(fi);
+            StateHasChanged();
+        }
+    }
+
     private void ComputeHighlighting()
     {
         if (Diff is null) return;
@@ -298,6 +420,7 @@
     private async Task ScrollToFile(int index)
     {
         Session.HiddenFiles.Remove(index);
+        PersistHiddenFiles();
         _selectedIndex = index;
         await JS.InvokeVoidAsync("scrollToElement", $"file-{index}");
     }
@@ -306,6 +429,13 @@
     {
         if (!Session.HiddenFiles.Remove(index))
             Session.HiddenFiles.Add(index);
+        PersistHiddenFiles();
+    }
+
+    private void PersistHiddenFiles()
+    {
+        if (Diff is null) return;
+        AiCache.SetHiddenFileIndices(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, Session.HiddenFiles);
     }
 
     private static string RefIconClass(RefCategory c) => c switch

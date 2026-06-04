@@ -4,10 +4,16 @@
 @inject DiffSessionService Session
 @inject NavigationManager Nav
 
-<div class="page narrow">
+<div class="settings-view">
+<div class="settings-header">
     <a class="back-link" href="/">← Repositories</a>
-
-    <h1 class="page-h1">Select Branches</h1>
+    <span class="settings-header-title">Select Branches</span>
+    <div style="margin-left:auto">
+        <a class="btn btn-sm" title="Settings" aria-label="Settings" href="/settings?from=/branches@(RepoPath is not null ? "?path=" + Uri.EscapeDataString(RepoPath) : "")"><span class="icon icon-gear" style="width:16px;height:16px"></span></a>
+    </div>
+</div>
+<div class="settings-body">
+<div class="page narrow">
     @if (!string.IsNullOrEmpty(repoName))
     {
         <p class="repo-label">@repoName</p>
@@ -102,6 +108,8 @@
             @(comparing ? "Computing diff…" : "Compare →")
         </button>
     }
+</div>
+</div>
 </div>
 
 @implements IDisposable

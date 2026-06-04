@@ -4,6 +4,8 @@
 @inject ICopilotAuthService CopilotAuth
 @inject ICopilotService Copilot
 @inject ICopilotModelService CopilotModelService
+@inject IOllamaEndpointService OllamaEndpoints
+@inject IOllamaService OllamaSvc
 @inject AiCacheService AiCache
 @inject IAnalysisLinkService LinkService
 @inject ISettingsService Settings
@@ -21,14 +23,14 @@
     // Sidebar item lists (cached ∪ in-flight so running items stay visible during refresh)
     var explainItems = allEntries
         .Where(kv => kv.Key.Feature == "explain").Select(kv => kv.Key)
-        .Union(_runningKeys.Where(k => k.Feature == "explain"))
-        .Union(_erroredKeys.Where(k => k.Feature == "explain"))
+        .Union(AiCache.ActiveRunKeys.Where(k => k.Feature == "explain"))
+        .Union(AiCache.ErroredKeys.Where(k => k.Feature == "explain"))
         .OrderBy(k => allEntries.TryGetValue(k, out var e0) ? e0.CachedAt : DateTime.MaxValue)
         .ToList();
     var reviewItems = allEntries
         .Where(kv => kv.Key.Feature == "review").Select(kv => kv.Key)
-        .Union(_runningKeys.Where(k => k.Feature == "review"))
-        .Union(_erroredKeys.Where(k => k.Feature == "review"))
+        .Union(AiCache.ActiveRunKeys.Where(k => k.Feature == "review"))
+        .Union(AiCache.ErroredKeys.Where(k => k.Feature == "review"))
         .OrderBy(k => allEntries.TryGetValue(k, out var e1) ? e1.CachedAt : DateTime.MaxValue)
         .ToList();
 
@@ -37,11 +39,19 @@
         .Concat(reviewItems.Select(k => (feature: "review", key: k)))
         .ToList();
 
-    // Combined model list: Claude first, then Copilot (keyed with "copilot:" prefix)
+    // Combined model list: Claude, then Copilot, then Ollama (per endpoint)
     var allModels = ModelService.VisibleModels
-        .Select(m => new AiModel(m.Id, m.Id, m.DisplayName, AiProvider.Claude))
+        .Select(m => new AiModel(m.Id, m.Id, m.DisplayName, AiProvider.Claude,
+            IconId: "icon-claude", BadgeColor: "#e07b39"))
         .Concat(CopilotModelService.VisibleModels
-            .Select(m => new AiModel($"copilot:{m.Id}", m.Id, m.DisplayName, AiProvider.Copilot)))
+            .Select(m => new AiModel($"copilot:{m.Id}", m.Id, m.DisplayName, AiProvider.Copilot,
+                IconId: "icon-copilot", BadgeColor: "#8534F3")))
+        .Concat(OllamaEndpoints.Endpoints.SelectMany(ep =>
+            OllamaEndpoints.GetVisibleModels(ep.Id)
+                .Select(m => new AiModel($"ollama:{ep.Id}:{m.Id}", m.Id,
+                    $"{ep.Name} / {m.DisplayName}", AiProvider.Ollama,
+                    IconId: ep.IconId == "ollama" ? "icon-ollama" : $"gi-{ep.IconId}",
+                    BadgeColor: ep.BadgeColor))))
         .ToList();
 
     // Add-dropdown: exclude models already present (cached or in-flight)
@@ -57,12 +67,14 @@
 }
 
 @if (ClaudeAuth.State != ClaudeAuthState.Authenticated
-  && CopilotAuth.State != CopilotAuthState.Authenticated)
+  && CopilotAuth.State != CopilotAuthState.Authenticated
+  && !OllamaEndpoints.Endpoints.Any())
 {
     <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
-        <p>Sign in to an AI provider to use AI features.</p>
+        <p>Sign in to an AI provider or add an Ollama endpoint in Settings to use AI features.</p>
         <p>For Claude: run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
         <p>For GitHub Copilot: click <strong>Sign in</strong> in Settings.</p>
+        <p>For Ollama: add an endpoint in Settings.</p>
     </div>
 }
 else if (diff is null)
@@ -90,12 +102,12 @@ else
             {
                 var k         = runKey;
                 var dispIdx   = sideIdx;
-                var isRunning = _runningKeys.Contains(k);
+                var isRunning = AiCache.ActiveRunKeys.Contains(k);
                 var isHidden  = !LinkService.IsVisible(k);
                 var isActive  = _selectedFeature == "explain" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("explain", k, dispIdx)'>
-                    <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                    <span class="@ProviderBadgeClass(k.Model)" style="@ProviderBadgeStyle(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
                         <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
@@ -127,12 +139,12 @@ else
             {
                 var k         = runKey;
                 var dispIdx   = explainItems.Count + sideIdx;
-                var isRunning = _runningKeys.Contains(k);
+                var isRunning = AiCache.ActiveRunKeys.Contains(k);
                 var isHidden  = !LinkService.IsVisible(k);
                 var isActive  = _selectedFeature == "review" && _selectedKey == k;
                 <div class="file-item @(isActive ? "active" : "") @(isHidden ? "file-hidden" : "")"
                      @onclick='() => SelectAndScroll("review", k, dispIdx)'>
-                    <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                    <span class="@ProviderBadgeClass(k.Model)" style="@ProviderBadgeStyle(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                     <div class="file-info">
                         <span class="file-name">@GetAiDisplayName(k.Model)</span>
                     </div>
@@ -174,15 +186,15 @@ else
             {
                 var (feat, k)    = displayItems[i];
                 var cardIdx      = i;
-                var isRunning    = _runningKeys.Contains(k);
+                var isRunning    = AiCache.ActiveRunKeys.Contains(k);
                 var isHidden     = !LinkService.IsVisible(k);
                 var featureLabel = feat == "explain" ? "Context" : "Code Review";
                 allEntries.TryGetValue(k, out var entry);
-                _errors.TryGetValue(k, out var cardError);
+                AiCache.RunErrors.TryGetValue(k, out var cardError);
 
                 <div class="diff-file diff-file-@feat @(isHidden ? "diff-file-hidden" : "")" id="analysis-@cardIdx">
                     <div class="file-header">
-                        <span class="@ProviderBadgeClass(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
+                        <span class="@ProviderBadgeClass(k.Model)" style="@ProviderBadgeStyle(k.Model)"><span class="icon @ProviderIconClass(k.Model)"></span></span>
                         <span class="file-path">
                             <strong>@GetAiDisplayName(k.Model)</strong>
                         </span>
@@ -268,15 +280,12 @@ else
     [Parameter] public bool SidebarCollapsed { get; set; }
     [Parameter] public EventCallback<bool> SidebarCollapsedChanged { get; set; }
 
-    private string?                               _selectedFeature;
-    private AiRunKey?                             _selectedKey;
-    private readonly HashSet<AiRunKey>            _runningKeys  = [];
-    private readonly HashSet<AiRunKey>            _erroredKeys  = [];
-    private readonly Dictionary<AiRunKey, string> _errors       = [];
-    private string    _explainAddModel  = "";
-    private string    _reviewAddModel   = "";
-    private AiRunKey? _pendingDeleteKey;
-    private AiRunKey? _copiedKey;
+    private string?     _selectedFeature;
+    private AiRunKey?   _selectedKey;
+    private string      _explainAddModel  = "";
+    private string      _reviewAddModel   = "";
+    private AiRunKey?   _pendingDeleteKey;
+    private AiRunKey?   _copiedKey;
     private DiffResult? _lastDiff;
 
     private DotNetObjectReference<AnalysisPanel>? _dotNetRef;
@@ -285,7 +294,9 @@ else
     {
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
+        OllamaEndpoints.Changed           += OnModelsChanged;
         LinkService.Changed               += OnLinksChanged;
+        AiCache.RunStateChanged           += OnRunStateChanged;
         _dotNetRef = DotNetObjectReference.Create(this);
     }
 
@@ -295,16 +306,17 @@ else
         _lastDiff = Diff;
         _selectedFeature  = null;
         _selectedKey      = null;
-        _runningKeys.Clear();
-        _erroredKeys.Clear();
-        _errors.Clear();
+        AiCache.ClearRunState();
         _explainAddModel  = Settings.PreferredExplainModel;
         _reviewAddModel   = Settings.PreferredReviewModel;
         _pendingDeleteKey = null;
 
         LinkService.Reset();
         if (Diff is not null)
+        {
+            LinkService.LoadHiddenKeys(AiCache.GetHiddenRunKeys(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
             LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -313,14 +325,17 @@ else
             await JS.InvokeVoidAsync("setAnalysisRefDotNet", _dotNetRef);
     }
 
-    private void OnModelsChanged() => InvokeAsync(StateHasChanged);
-    private void OnLinksChanged()  => InvokeAsync(StateHasChanged);
+    private void OnModelsChanged()   => InvokeAsync(StateHasChanged);
+    private void OnLinksChanged()    => InvokeAsync(StateHasChanged);
+    private void OnRunStateChanged() => InvokeAsync(StateHasChanged);
 
     public async ValueTask DisposeAsync()
     {
         ModelService.ModelsChanged        -= OnModelsChanged;
         CopilotModelService.ModelsChanged -= OnModelsChanged;
+        OllamaEndpoints.Changed           -= OnModelsChanged;
         LinkService.Changed               -= OnLinksChanged;
+        AiCache.RunStateChanged           -= OnRunStateChanged;
         try { await JS.InvokeVoidAsync("clearAnalysisRefDotNet"); }
         catch { /* JS context may already be gone during shutdown */ }
         _dotNetRef?.Dispose();
@@ -333,14 +348,23 @@ else
         await JS.InvokeVoidAsync("scrollToElement", $"analysis-{displayIdx}");
     }
 
-    private void ToggleHidden(AiRunKey key) =>
+    private void ToggleHidden(AiRunKey key)
+    {
         LinkService.SetVisible(key, !LinkService.IsVisible(key));
+        if (Diff is not null)
+        {
+            var diff = Diff;
+            var allKeys = AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch).Keys
+                .Where(k => !LinkService.IsVisible(k));
+            AiCache.SetHiddenRunKeys(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, allKeys);
+        }
+    }
 
     private void AddEntry(string feature, string modelId)
     {
         if (string.IsNullOrEmpty(modelId) || Diff is null) return;
         var key = new AiRunKey(feature, modelId, Settings.AiToolsEnabled, Settings.AiMaxTurns, Settings.DiffContextLines);
-        if (!_runningKeys.Add(key)) return;
+        if (!AiCache.TryStartRun(key)) return;
         _selectedFeature = feature;
         _selectedKey     = key;
         if (feature == "explain") Settings.PreferredExplainModel = modelId;
@@ -350,8 +374,7 @@ else
 
     private void RefreshEntry(AiRunKey key)
     {
-        if (Diff is null || !_runningKeys.Add(key)) return;
-        _erroredKeys.Remove(key);
+        if (Diff is null || !AiCache.TryStartRun(key)) return;
         _ = RunAsync(key, refresh: true);
     }
 
@@ -369,8 +392,8 @@ else
     {
         if (_pendingDeleteKey is null || Diff is null) return;
         AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, _pendingDeleteKey);
-        _erroredKeys.Remove(_pendingDeleteKey);
-        _errors.Remove(_pendingDeleteKey);
+        AiCache.ErroredKeys.Remove(_pendingDeleteKey);
+        AiCache.RunErrors.Remove(_pendingDeleteKey);
         if (_selectedKey == _pendingDeleteKey) { _selectedFeature = null; _selectedKey = null; }
         LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
         _pendingDeleteKey = null;
@@ -379,61 +402,93 @@ else
     private static bool IsCopilot(string modelKey) =>
         modelKey.StartsWith("copilot:", StringComparison.Ordinal);
 
-    private static string ProviderIconClass(string modelKey) =>
-        IsCopilot(modelKey) ? "icon-copilot" : "icon-claude";
+    private static bool IsOllama(string modelKey) =>
+        modelKey.StartsWith("ollama:", StringComparison.Ordinal);
 
-    private static string ProviderBadgeClass(string modelKey) =>
-        IsCopilot(modelKey) ? "copilot-badge" : "claude-badge";
+    private string ProviderIconClass(string modelKey)
+    {
+        if (IsCopilot(modelKey)) return "icon-copilot";
+        if (IsOllama(modelKey))
+        {
+            var parts = modelKey.Split(':', 3);
+            var iconId = parts.Length == 3 ? OllamaEndpoints.GetEndpoint(parts[1])?.IconId ?? "ollama" : "ollama";
+            return iconId == "ollama" ? "icon-ollama" : $"gi-{iconId}"; // iconId is the CSS suffix
+        }
+        return "icon-claude";
+    }
 
-    private string GetAiDisplayName(string modelKey) =>
-        IsCopilot(modelKey)
-            ? CopilotModelService.GetDisplayName(modelKey["copilot:".Length..])
-            : ModelService.GetDisplayName(modelKey);
+    private string ProviderBadgeClass(string modelKey) =>
+        IsCopilot(modelKey) ? "copilot-badge" : IsOllama(modelKey) ? "ollama-badge" : "claude-badge";
+
+    private string ProviderBadgeStyle(string modelKey)
+    {
+        if (!IsOllama(modelKey)) return "";
+        var parts = modelKey.Split(':', 3);
+        var color = parts.Length == 3 ? OllamaEndpoints.GetEndpoint(parts[1])?.BadgeColor : null;
+        return color is not null ? $"color:{color}" : "";
+    }
+
+    private string GetAiDisplayName(string modelKey)
+    {
+        if (IsCopilot(modelKey))
+            return CopilotModelService.GetDisplayName(modelKey["copilot:".Length..]);
+        if (IsOllama(modelKey))
+        {
+            var parts = modelKey.Split(':', 3);
+            return parts.Length == 3
+                ? $"{OllamaEndpoints.GetEndpoint(parts[1])?.Name ?? parts[1]} / {OllamaEndpoints.GetModelDisplayName(parts[1], parts[2])}"
+                : modelKey;
+        }
+        return ModelService.GetDisplayName(modelKey);
+    }
 
     private async Task RunAsync(AiRunKey key, bool refresh)
     {
-        if (Diff is null) { _runningKeys.Remove(key); return; }
+        // Capture Diff now — the component may be remounted by the time this completes
+        var diff = Diff;
+        if (diff is null) { AiCache.CompleteRun(key); return; }
+
         if (refresh)
-            AiCache.Remove(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key);
-        _errors.Remove(key);
+            AiCache.Remove(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, key);
+
         await InvokeAsync(StateHasChanged);
 
         try
         {
             string result;
-            if (key.Model.StartsWith("copilot:", StringComparison.Ordinal))
+            if (IsCopilot(key.Model))
             {
                 var rawId = key.Model["copilot:".Length..];
                 result = key.Feature == "review"
-                    ? await Copilot.ReviewDiffAsync(Diff, rawId)
-                    : await Copilot.ExplainDiffAsync(Diff, rawId);
+                    ? await Copilot.ReviewDiffAsync(diff, rawId)
+                    : await Copilot.ExplainDiffAsync(diff, rawId);
+            }
+            else if (IsOllama(key.Model))
+            {
+                var parts = key.Model.Split(':', 3);
+                result = key.Feature == "review"
+                    ? await OllamaSvc.ReviewDiffAsync(diff, parts[1], parts[2])
+                    : await OllamaSvc.ExplainDiffAsync(diff, parts[1], parts[2]);
             }
             else
             {
                 result = key.Feature == "review"
-                    ? await Claude.ReviewDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns)
-                    : await Claude.ExplainDiffAsync(Diff, key.Model, key.ToolsEnabled, key.MaxTurns);
+                    ? await Claude.ReviewDiffAsync(diff, key.Model, key.ToolsEnabled, key.MaxTurns)
+                    : await Claude.ExplainDiffAsync(diff, key.Model, key.ToolsEnabled, key.MaxTurns);
             }
-            AiCache.Set(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, key, result);
+            AiCache.Set(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch, key, result);
+            AiCache.CompleteRun(key);
+            LinkService.Refresh(diff, AiCache.GetAll(diff.RepositoryPath, diff.BaseBranch, diff.CompareBranch));
         }
         catch (UnauthorizedAccessException ex)
         {
-            _errors[key] = ex.Message;
-            _erroredKeys.Add(key);
-            if (!key.Model.StartsWith("copilot:", StringComparison.Ordinal))
+            AiCache.FailRun(key, ex.Message);
+            if (!IsCopilot(key.Model) && !IsOllama(key.Model))
                 ClaudeAuth.Reload();
         }
         catch (Exception ex)
         {
-            _errors[key] = $"Request failed: {ex.Message}";
-            _erroredKeys.Add(key);
-        }
-        finally
-        {
-            _runningKeys.Remove(key);
-            if (Diff is not null)
-                LinkService.Refresh(Diff, AiCache.GetAll(Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch));
-            await InvokeAsync(StateHasChanged);
+            AiCache.FailRun(key, $"Request failed: {ex.Message}");
         }
     }
 

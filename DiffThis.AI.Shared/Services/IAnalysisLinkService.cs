@@ -26,6 +26,9 @@ public interface IAnalysisLinkService
     /// Set visibility of a run key (mirrors the eye-toggle in AnalysisPanel).
     void SetVisible(AiRunKey key, bool visible);
 
+    /// Restore hidden-key state from persisted storage (call after Reset when loading a diff).
+    void LoadHiddenKeys(IEnumerable<AiRunKey> hiddenKeys);
+
     /// Fired when refs or visibility change — both panels subscribe to trigger re-render.
     event Action? Changed;
 

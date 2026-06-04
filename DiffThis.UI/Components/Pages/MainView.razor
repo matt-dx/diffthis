@@ -136,8 +136,11 @@ else
     private async Task ExportMarkdown()
     {
         if (_diff is null) return;
-        var aiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
-        var markdown = Export.GenerateMarkdown(_diff, aiResults);
+        var allAiResults = AiCache.GetAll(_diff.RepositoryPath, _diff.BaseBranch, _diff.CompareBranch);
+        var visibleAiResults = allAiResults
+            .Where(kv => LinkService.IsVisible(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        var markdown = Export.GenerateMarkdown(_diff, visibleAiResults, Session.HiddenFiles);
         var filename = $"diff_{_diff.BaseDisplay}_{_diff.CompareDisplay}_{DateTime.Now:yyyyMMdd_HHmm}.md"
             .Replace('/', '-').Replace('\\', '-')
             .Replace(':', '-').Replace('*', '-').Replace('?', '-')

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DiffThis.AI.OpenAI.Models;
 
 namespace DiffThis.AI.OpenAI.Services;
@@ -142,26 +143,130 @@ public class CopilotModelService : ICopilotModelService
 
     private void MergeInto(List<(string id, string display)> fetched, bool fromApi)
     {
-        var merged = new List<CopilotModel>();
-        foreach (var (id, display) in fetched)
+        // Step 1: build initial display names, detect preview/dated models
+        var parsed = fetched.Select(f =>
         {
-            var existing = _models.FirstOrDefault(m => m.Id == id);
+            var (baseId, dateSuffix, isPreview) = ParseModelId(f.id);
+            return (f.id, baseId, dateSuffix, isPreview, rawDisplay: f.display);
+        }).ToList();
+
+        // Step 2: for each model, determine the canonical representative of its base group.
+        // Canonical priority: undated + non-preview > dated (newest date first) > preview.
+        var groups = parsed.GroupBy(p => p.baseId).ToDictionary(g => g.Key, g => g.ToList());
+        var canonicalIds = new HashSet<string>();
+        foreach (var group in groups.Values)
+        {
+            // Prefer the plain undated non-preview member
+            var plain = group.FirstOrDefault(p => p.dateSuffix is null && !p.isPreview);
+            if (plain != default) { canonicalIds.Add(plain.id); continue; }
+            // Otherwise, newest dated version
+            var newest = group.Where(p => p.dateSuffix is not null && !p.isPreview)
+                              .OrderByDescending(p => p.dateSuffix)
+                              .FirstOrDefault();
+            if (newest != default) { canonicalIds.Add(newest.id); continue; }
+            // Fall back to preview if nothing else
+            canonicalIds.Add(group[0].id);
+        }
+
+        // Step 3: assign display names, ensuring uniqueness
+        var nameCount   = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var displayNames = new Dictionary<string, string>();
+        foreach (var p in parsed)
+        {
+            var name = BuildDisplayName(p.id, p.baseId, p.dateSuffix, p.isPreview);
+            nameCount[name] = (nameCount.TryGetValue(name, out var c) ? c : 0) + 1;
+            displayNames[p.id] = name;
+        }
+        // Disambiguate: for names that appear more than once, append the suffix back
+        foreach (var p in parsed.Where(p => nameCount.TryGetValue(displayNames[p.id], out var n) && n > 1))
+        {
+            var suffix = p.isPreview  ? " (Preview)"
+                       : p.dateSuffix is not null ? $" ({FormatDate(p.dateSuffix)})"
+                       : "";
+            if (suffix.Length > 0)
+                displayNames[p.id] = BuildBaseDisplayName(p.baseId) + suffix;
+        }
+
+        // Step 4: merge with existing model list
+        var merged = new List<CopilotModel>();
+        foreach (var p in parsed)
+        {
+            var existing    = _models.FirstOrDefault(m => m.Id == p.id);
+            var isCanonical = canonicalIds.Contains(p.id);
             merged.Add(new CopilotModel
             {
-                Id           = id,
-                DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : display,
+                Id           = p.id,
+                DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : displayNames[p.id],
                 IsCustomName = existing?.IsCustomName ?? false,
-                // All GitHub Models share the same ~8k token per-request cap, so
-                // there is no meaningful reason to hide "small context" models —
-                // the 28 000-char diff limit applies equally to every model.
-                // New models: visible by default; existing models: preserve user choice.
-                IsHidden     = existing?.IsHidden ?? false,
+                // New models: canonical=visible, non-canonical (dated/preview duplicates)=hidden.
+                // Existing models: preserve user choice.
+                IsHidden     = existing is not null ? existing.IsHidden : !isCanonical,
             });
         }
         _models         = merged;
         LastFetchedAt   = DateTime.UtcNow;
         IsUsingDefaults = !fromApi;
         Save();
+    }
+
+    // Parse "gpt-4o-2024-11-20" → ("gpt-4o", "2024-11-20", false)
+    // Parse "gemini-3-flash-preview" → ("gemini-3-flash", null, true)
+    // Parse "gpt-3.5-turbo-0613"    → ("gpt-3.5-turbo",  "0613", false)
+    internal static (string baseId, string? dateSuffix, bool isPreview) ParseModelId(string id)
+    {
+        var isPreview = id.EndsWith("-preview", StringComparison.OrdinalIgnoreCase);
+        var working   = isPreview ? id[..^"-preview".Length] : id;
+
+        // Full ISO date: -YYYY-MM-DD
+        var fullDate = Regex.Match(working, @"-(\d{4}-\d{2}-\d{2})$");
+        if (fullDate.Success)
+            return (working[..^(fullDate.Groups[1].Value.Length + 1)], fullDate.Groups[1].Value, isPreview);
+
+        // 4-digit version snapshot: -MMDD or -NNNN (e.g. gpt-4-0613)
+        var shortVer = Regex.Match(working, @"-(\d{4})$");
+        if (shortVer.Success)
+            return (working[..^5], shortVer.Groups[1].Value, isPreview);
+
+        return (working, null, isPreview);
+    }
+
+    private static string BuildDisplayName(string id, string baseId, string? dateSuffix, bool isPreview)
+    {
+        var baseName = BuildBaseDisplayName(baseId);
+        if (isPreview) return $"{baseName} (Preview)";
+        return baseName;
+    }
+
+    private static string BuildBaseDisplayName(string baseId)
+    {
+        // Strip publisher prefix
+        var slash = baseId.LastIndexOf('/');
+        var slug  = slash >= 0 ? baseId[(slash + 1)..] : baseId;
+
+        return slug.ToLowerInvariant() switch
+        {
+            "gpt-4o"      => "GPT-4o",
+            "gpt-4o-mini" => "GPT-4o Mini",
+            "gpt-4"       => "GPT-4",
+            "gpt-4-turbo" => "GPT-4 Turbo",
+            "gpt-3.5-turbo" or "gpt-3.5" => "GPT-3.5 Turbo",
+            "o1"          => "o1",
+            "o1-mini"     => "o1 Mini",
+            "o3"          => "o3",
+            "o3-mini"     => "o3 Mini",
+            "o4-mini"     => "o4 Mini",
+            "phi-4"       => "Phi 4",
+            "mistral-nemo" => "Mistral Nemo",
+            _ => TitleCaseSlug(slug),
+        };
+    }
+
+    private static string FormatDate(string dateSuffix)
+    {
+        // "2024-11-20" → "Nov 2024"; "0613" → "0613" (keep as-is for short codes)
+        if (DateTime.TryParse(dateSuffix, out var dt))
+            return dt.ToString("MMM yyyy");
+        return dateSuffix;
     }
 
     private void ApplyDefaults()
@@ -245,35 +350,21 @@ public class CopilotModelService : ICopilotModelService
     }
 
     // ── Name inference ────────────────────────────────────────────────────
-    // Model IDs are "Publisher/model-name" or bare "model-name".
-    // Strip the publisher prefix, then apply known mappings.
+    // Used by GetDisplayName (fallback) and ResetDisplayName.
 
     internal static string InferName(string id)
     {
         if (string.IsNullOrEmpty(id)) return id;
-        var slash = id.LastIndexOf('/');
-        var slug  = slash >= 0 ? id[(slash + 1)..] : id;
-
-        return slug.ToLowerInvariant() switch
-        {
-            "gpt-4o"                         => "GPT-4o",
-            "gpt-4o-mini"                    => "GPT-4o Mini",
-            "o1"                             => "o1",
-            "o1-mini"                        => "o1 Mini",
-            "o3-mini"                        => "o3 Mini",
-            "o3"                             => "o3",
-            "phi-4"                          => "Phi 4",
-            "mistral-nemo"                   => "Mistral Nemo",
-            _ => TitleCaseSlug(slug),
-        };
+        var (baseId, _, isPreview) = ParseModelId(id);
+        var name = BuildBaseDisplayName(baseId);
+        return isPreview ? $"{name} (Preview)" : name;
     }
 
     private static string TitleCaseSlug(string slug)
     {
         // "Llama-3.3-70B-Instruct" → "Llama 3.3 70B Instruct"
-        // Strip trailing date suffix (8 digits): "command-r-plus-08-2024" → "command-r-plus"
         var parts = slug.Split('-');
-        // Drop trailing date parts (pure 2-4 digit numbers at end, e.g. "2024", "08")
+        // Drop trailing digit-only parts that are clearly version stamps
         var end = parts.Length;
         while (end > 1 && parts[end - 1].All(char.IsDigit) && parts[end - 1].Length <= 4)
             end--;

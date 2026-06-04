@@ -124,6 +124,24 @@ main      { height: 100vh; overflow-y: auto; }
 }
 .back-link:hover { color: var(--primary); text-decoration: none; }
 
+/* ── Settings page layout (sticky header + scrolling body) ───────────── */
+.settings-view {
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+}
+.settings-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; height: 48px; flex-shrink: 0;
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+}
+.settings-header-title {
+  font-size: 15px; font-weight: 700; color: var(--fg);
+}
+.settings-header .back-link { margin-bottom: 0; }
+.settings-body {
+  flex: 1; overflow-y: auto;
+}
+.settings-body > .page { padding-top: 24px; }
+
 /* ── Home header ─────────────────────────────────────────────────────── */
 .page-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -344,6 +362,23 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-header .eye-btn { opacity: 0.45; }
 .file-header .eye-btn:hover { opacity: 1; background: var(--border); }
 
+/* ── Per-file context line controls ─────────────────────────────────── */
+.context-ctrl {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+}
+.ctx-btn {
+  width: 20px; height: 20px; padding: 0; border-radius: 3px; font-size: 14px; line-height: 1;
+  border: 1px solid var(--border); background: var(--bg); color: var(--fg-secondary);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+.ctx-btn:hover:not(:disabled) { background: var(--border); color: var(--fg); }
+.ctx-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.ctx-label {
+  font-size: 11px; color: var(--fg-secondary); min-width: 20px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Status badges ───────────────────────────────────────────────────── */
 .status-badge {
   display: inline-block; padding: 1px 5px; border-radius: 3px;
@@ -456,7 +491,25 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 /* ── Settings ────────────────────────────────────────────────────────── */
 .settings-section  { margin-bottom: 28px; }
 .setting-card      { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--bg-card); }
+.setting-card + .setting-card { margin-top: 10px; }
+.setting-card-divider { border: none; border-top: 1px solid var(--border); margin: 14px -16px; }
 .setting-row       { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+/* Ollama endpoint badge picker */
+.ollama-icon-btn   { display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);cursor:pointer;flex-shrink:0;transition:border-color .15s; }
+.ollama-icon-btn:hover { border-color: var(--fg-secondary); }
+.badge-picker-modal { background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:600px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,0.35); }
+.badge-picker-header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.badge-picker-title { font-size:15px;font-weight:600;color:var(--fg);margin:0; }
+.badge-picker-search { flex:1;padding:5px 10px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--fg);min-width:0; }
+.badge-picker-search:focus { outline:none;border-color:var(--fg-secondary); }
+.badge-picker-close { display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;background:transparent;color:var(--fg-secondary);cursor:pointer;font-size:16px;border-radius:4px;flex-shrink:0; }
+.badge-picker-close:hover { background:var(--bg-hover); }
+.badge-picker-grid { display:flex;flex-wrap:wrap;gap:3px;overflow-y:auto;flex:1;padding:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px; }
+.badge-picker-btn { display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid transparent;border-radius:5px;background:transparent;cursor:pointer;transition:border-color .12s,background .12s;flex-shrink:0; }
+.badge-picker-btn:hover { background:var(--bg-card);border-color:var(--border); }
+.badge-picker-btn.selected { background:var(--bg-card);border-color:var(--fg-secondary); }
+.badge-picker-count { font-size:11px;color:var(--fg-secondary); }
 .setting-label     { font-size: 14px; font-weight: 600; }
 .setting-desc      { font-size: 12px; color: var(--fg-secondary); margin-top: 2px; }
 
@@ -668,13 +721,15 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-ref-icon:hover { opacity: 1; }
 
 /* ── Analysis result cards ───────────────────────────────────────────── */
-.claude-badge, .copilot-badge {
+.claude-badge, .copilot-badge, .ollama-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; flex-shrink: 0;
 }
 .claude-badge  { color: #e07b39; }
 .copilot-badge { color: #8534F3; }
-.claude-badge .icon, .copilot-badge .icon { width: 16px; height: 16px; }
+.ollama-badge  { color: #D68E42; }
+:root { --ollama-color: #D68E42; }
+.claude-badge .icon, .copilot-badge .icon, .ollama-badge .icon { width: 16px; height: 16px; }
 
 .analysis-feature-badge {
   display: inline-block; padding: 1px 7px; border-radius: 3px;

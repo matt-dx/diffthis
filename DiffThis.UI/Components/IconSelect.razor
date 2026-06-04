@@ -11,7 +11,7 @@
             var selectedModel = Options.FirstOrDefault(m => m.Key == Value);
             @if (selectedModel is not null)
             {
-                <span class="icon @IconClass(selectedModel)" style="width:14px;height:14px"></span>
+                <span class="icon @selectedModel.IconId" style="width:14px;height:14px;color:@selectedModel.BadgeColor"></span>
             }
         }
         <span class="model-dropdown-name">@(SelectedName ?? "—")</span>
@@ -26,7 +26,7 @@
                 <button type="button"
                         class="model-dropdown-option @(m.Key == Value ? "selected" : "")"
                         @onclick="() => Select(captured)">
-                    <span class="icon @IconClass(m)" style="width:14px;height:14px"></span>
+                    <span class="icon @m.IconId" style="width:14px;height:14px;color:@m.BadgeColor"></span>
                     <span class="model-dropdown-option-name">@m.DisplayName</span>
                 </button>
             }
@@ -43,9 +43,6 @@
 
     private string? SelectedName =>
         Options.FirstOrDefault(m => m.Key == Value)?.DisplayName;
-
-    private static string IconClass(AiModel m) =>
-        m.Provider == AiProvider.Copilot ? "icon-copilot" : "icon-claude";
 
     private void Toggle() => _open = !_open;
     private void Close()  => _open = false;

@@ -1,0 +1,140 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using DiffThis.AI.Shared.Services;
+using DiffThis.Core.Models;
+
+namespace DiffThis.AI.OpenAI.Services;
+
+public class OllamaService : IOllamaService
+{
+    private readonly IOllamaEndpointService _endpoints;
+    private readonly PromptService          _prompts;
+    private readonly HttpClient             _http = new() { Timeout = TimeSpan.FromMinutes(5) };
+
+    public OllamaService(IOllamaEndpointService endpoints, PromptService prompts)
+    {
+        _endpoints = endpoints;
+        _prompts   = prompts;
+    }
+
+    public Task<string> ReviewDiffAsync(DiffResult diff, string endpointId, string modelId, CancellationToken ct = default)
+    {
+        var (system, user) = _prompts.BuildReviewPromptParts(diff);
+        return CallAsync(system, user, endpointId, modelId, ct);
+    }
+
+    public Task<string> ExplainDiffAsync(DiffResult diff, string endpointId, string modelId, CancellationToken ct = default)
+    {
+        var (system, user) = _prompts.BuildExplainPromptParts(diff);
+        return CallAsync(system, user, endpointId, modelId, ct);
+    }
+
+    private async Task<string> CallAsync(string system, string user, string endpointId, string modelId, CancellationToken ct)
+    {
+        var endpoint = _endpoints.GetEndpoint(endpointId)
+            ?? throw new InvalidOperationException(
+                $"Ollama endpoint '{endpointId}' not found. It may have been removed.");
+
+        var baseUrl = endpoint.BaseUrl.TrimEnd('/');
+        var chatUrl = $"{baseUrl}/api/chat";
+
+        // Estimate token count (~3.5 chars/token for code), add 2048 for response headroom,
+        // round up to nearest 1024, clamp to [4096, 32768].
+        const int ResponseBuffer = 2048;
+        const int BlockSize      = 1024;
+        const int MinCtx         = 4096;
+        const int MaxCtx         = 32768;
+        var estimatedPromptTokens = (int)Math.Ceiling((system.Length + user.Length) / 3.5);
+        var rawCtx  = estimatedPromptTokens + ResponseBuffer;
+        var numCtx  = Math.Clamp((int)Math.Ceiling((double)rawCtx / BlockSize) * BlockSize, MinCtx, MaxCtx);
+
+        var body = JsonSerializer.Serialize(new
+        {
+            model    = modelId,
+            stream   = false,
+            options  = new { num_ctx = numCtx },
+            messages = new[]
+            {
+                new { role = "system", content = system },
+                new { role = "user",   content = user   },
+            },
+        });
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, chatUrl);
+        if (!string.IsNullOrEmpty(endpoint.ApiKey))
+            req.Headers.Add("Authorization", $"Bearer {endpoint.ApiKey}");
+        req.Headers.Add("User-Agent", "DiffThis/1.0");
+        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is TaskCanceledException
+                && baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            // localhost timed out — retry transparently with 127.0.0.1
+            var altUrl = chatUrl.Replace("localhost", "127.0.0.1", StringComparison.OrdinalIgnoreCase);
+            using var req2 = new HttpRequestMessage(HttpMethod.Post, altUrl);
+            if (!string.IsNullOrEmpty(endpoint.ApiKey))
+                req2.Headers.Add("Authorization", $"Bearer {endpoint.ApiKey}");
+            req2.Headers.Add("User-Agent", "DiffThis/1.0");
+            req2.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            try { resp = await _http.SendAsync(req2, ct); }
+            catch (Exception ex2)
+            {
+                throw new InvalidOperationException(
+                    $"Could not reach Ollama at {baseUrl} (also tried 127.0.0.1): {ex2.Message}", ex2);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Could not reach Ollama at {baseUrl}: {ex.Message}", ex);
+        }
+
+        var responseBody = await resp.Content.ReadAsStringAsync(ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            switch (resp.StatusCode)
+            {
+                case HttpStatusCode.NotFound:
+                    throw new InvalidOperationException(
+                        $"Ollama endpoint not found at {chatUrl}. Check the base URL in Settings.");
+                case HttpStatusCode.Unauthorized:
+                    throw new UnauthorizedAccessException(
+                        "Ollama rejected the request — check the API key in Settings.");
+                default:
+                    if (responseBody.Contains("model") && responseBody.Contains("not found"))
+                        throw new InvalidOperationException(
+                            $"Model \"{modelId}\" not found in Ollama. Run 'ollama pull {modelId}' to download it.");
+                    throw new InvalidOperationException(
+                        $"Ollama {(int)resp.StatusCode}: {responseBody}");
+            }
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            var content   = doc.RootElement
+                               .GetProperty("message")
+                               .GetProperty("content")
+                               .GetString();
+
+            if (string.IsNullOrWhiteSpace(content))
+                throw new InvalidOperationException("Ollama returned an empty response.");
+
+            return content.Trim();
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException
+                                       and not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Could not parse Ollama response: {ex.Message}\n{responseBody}", ex);
+        }
+    }
+}
