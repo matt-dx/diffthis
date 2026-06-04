@@ -297,12 +297,19 @@
                             @onclick="() => OllamaEndpoints.RemoveEndpoint(epId)">Remove</button>
                 </div>
 
-                <!-- API key row -->
-                <div style="margin-top:8px">
+                <!-- API key + timeout row -->
+                <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                     <input class="model-name-input" style="width:260px;text-align:left"
                            value="@(ep.ApiKey ?? "")" placeholder="API key (optional)"
                            type="password"
                            @onchange="e => UpdateOllamaEndpointApiKey(epId, e.Value?.ToString())" />
+                    <input class="model-name-input" style="width:72px;text-align:right"
+                           type="number" min="1"
+                           value="@(ep.TimeoutSeconds?.ToString() ?? "")"
+                           placeholder="∞"
+                           title="Request timeout in seconds. Leave blank for no timeout."
+                           @onchange="e => UpdateOllamaEndpointTimeout(epId, e.Value?.ToString())" />
+                    <span class="setting-desc" style="margin:0">s timeout (blank = none)</span>
                 </div>
 
                 @if (epError is not null)
@@ -690,6 +697,14 @@
     {
         var ep = OllamaEndpoints.GetEndpoint(id);
         if (ep is not null) OllamaEndpoints.UpdateEndpoint(ep with { BadgeColor = color });
+    }
+
+    private void UpdateOllamaEndpointTimeout(string id, string? value)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is null) return;
+        var timeout = int.TryParse(value, out var secs) && secs > 0 ? secs : (int?)null;
+        OllamaEndpoints.UpdateEndpoint(ep with { TimeoutSeconds = timeout });
     }
 
     private async Task RefreshModels()        => await ModelService.RefreshAsync();

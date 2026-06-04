@@ -28,7 +28,7 @@ public class OllamaEndpointService : IOllamaEndpointService
     };
 
     public IReadOnlyList<OllamaEndpoint> Endpoints =>
-        _store.Select(s => new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor)).ToList();
+        _store.Select(s => new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds)).ToList();
 
     public bool IsLoading => _loadingCount > 0;
 
@@ -74,11 +74,12 @@ public class OllamaEndpointService : IOllamaEndpointService
     {
         var s = _store.FirstOrDefault(x => x.Id == endpoint.Id);
         if (s is null) return;
-        s.Name       = endpoint.Name;
-        s.BaseUrl    = endpoint.BaseUrl;
-        s.ApiKey     = endpoint.ApiKey;
-        s.IconId     = endpoint.IconId;
-        s.BadgeColor = endpoint.BadgeColor;
+        s.Name           = endpoint.Name;
+        s.BaseUrl        = endpoint.BaseUrl;
+        s.ApiKey         = endpoint.ApiKey;
+        s.IconId         = endpoint.IconId;
+        s.BadgeColor     = endpoint.BadgeColor;
+        s.TimeoutSeconds = endpoint.TimeoutSeconds;
         Save();
         Changed?.Invoke();
     }
@@ -241,7 +242,7 @@ public class OllamaEndpointService : IOllamaEndpointService
     public OllamaEndpoint? GetEndpoint(string endpointId)
     {
         var s = _store.FirstOrDefault(x => x.Id == endpointId);
-        return s is null ? null : new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor);
+        return s is null ? null : new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds);
     }
 
     public IReadOnlyList<OllamaModel> GetVisibleModels(string endpointId)
@@ -621,12 +622,13 @@ public class OllamaEndpointService : IOllamaEndpointService
 
     private class PersistedEndpoint
     {
-        public string  Id         { get; set; } = "";
-        public string  Name       { get; set; } = "";
-        public string  BaseUrl    { get; set; } = "http://localhost:11434";
-        public string? ApiKey     { get; set; }
-        public string  IconId     { get; set; } = "ollama";
-        public string  BadgeColor { get; set; } = "#D68E42";
+        public string  Id             { get; set; } = "";
+        public string  Name           { get; set; } = "";
+        public string  BaseUrl        { get; set; } = "http://localhost:11434";
+        public string? ApiKey         { get; set; }
+        public string  IconId         { get; set; } = "ollama";
+        public string  BadgeColor     { get; set; } = "#D68E42";
+        public int?    TimeoutSeconds { get; set; }
         public List<PersistedModel> Models { get; set; } = [];
     }
 

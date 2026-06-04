@@ -10,7 +10,7 @@ public class OllamaService : IOllamaService
 {
     private readonly IOllamaEndpointService _endpoints;
     private readonly PromptService          _prompts;
-    private readonly HttpClient             _http = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private readonly HttpClient             _http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     public OllamaService(IOllamaEndpointService endpoints, PromptService prompts)
     {
@@ -38,6 +38,12 @@ public class OllamaService : IOllamaService
 
         var baseUrl = endpoint.BaseUrl.TrimEnd('/');
         var chatUrl = $"{baseUrl}/api/chat";
+
+        using var cts = endpoint.TimeoutSeconds is { } secs
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        if (cts is not null) cts.CancelAfter(TimeSpan.FromSeconds(endpoint.TimeoutSeconds!.Value));
+        var effectiveCt = cts?.Token ?? ct;
 
         // Estimate token count (~3.5 chars/token for code), add 2048 for response headroom,
         // round up to nearest 1024, clamp to [4096, 32768].
@@ -70,20 +76,25 @@ public class OllamaService : IOllamaService
         HttpResponseMessage resp;
         try
         {
-            resp = await _http.SendAsync(req, ct);
+            resp = await _http.SendAsync(req, effectiveCt);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) when (cts is not null && cts.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"Ollama request timed out after {endpoint.TimeoutSeconds}s. Increase the timeout in Settings or set it to unlimited.");
+        }
         catch (Exception ex) when (ex is TaskCanceledException
                 && baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase))
         {
-            // localhost timed out — retry transparently with 127.0.0.1
+            // localhost unreachable — retry transparently with 127.0.0.1
             var altUrl = chatUrl.Replace("localhost", "127.0.0.1", StringComparison.OrdinalIgnoreCase);
             using var req2 = new HttpRequestMessage(HttpMethod.Post, altUrl);
             if (!string.IsNullOrEmpty(endpoint.ApiKey))
                 req2.Headers.Add("Authorization", $"Bearer {endpoint.ApiKey}");
             req2.Headers.Add("User-Agent", "DiffThis/1.0");
             req2.Content = new StringContent(body, Encoding.UTF8, "application/json");
-            try { resp = await _http.SendAsync(req2, ct); }
+            try { resp = await _http.SendAsync(req2, effectiveCt); }
             catch (Exception ex2)
             {
                 throw new InvalidOperationException(
@@ -96,7 +107,7 @@ public class OllamaService : IOllamaService
                 $"Could not reach Ollama at {baseUrl}: {ex.Message}", ex);
         }
 
-        var responseBody = await resp.Content.ReadAsStringAsync(ct);
+        var responseBody = await resp.Content.ReadAsStringAsync(effectiveCt);
 
         if (!resp.IsSuccessStatusCode)
         {
