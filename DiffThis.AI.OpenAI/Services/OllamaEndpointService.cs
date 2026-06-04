@@ -12,6 +12,7 @@ public class OllamaEndpointService : IOllamaEndpointService
     private readonly ILogger<OllamaEndpointService> _log;
     private readonly HttpClient                     _http;
 
+    private readonly object             _sync   = new();
     private List<PersistedEndpoint>    _store  = [];
     private int                        _loadingCount;
     private Dictionary<string, string> _errors = [];
@@ -27,13 +28,18 @@ public class OllamaEndpointService : IOllamaEndpointService
         DefaultVersionPolicy       = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower,
     };
 
-    public IReadOnlyList<OllamaEndpoint> Endpoints =>
-        _store.Select(s => new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds)).ToList();
+    public IReadOnlyList<OllamaEndpoint> Endpoints
+    {
+        get { lock (_sync) return _store.Select(s => new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds)).ToList(); }
+    }
 
     public bool IsLoading => _loadingCount > 0;
 
     // Last error per endpoint ID, cleared on successful refresh
-    public IReadOnlyDictionary<string, string> Errors => _errors;
+    public IReadOnlyDictionary<string, string> Errors
+    {
+        get { lock (_sync) return new Dictionary<string, string>(_errors); }
+    }
 
     public event Action? Changed;
 
@@ -63,37 +69,47 @@ public class OllamaEndpointService : IOllamaEndpointService
 
     public void AddEndpoint(string name, string baseUrl, string? apiKey = null)
     {
-        var id = Guid.NewGuid().ToString("N")[..8];
-        _store.Add(new PersistedEndpoint { Id = id, Name = name, BaseUrl = baseUrl, ApiKey = apiKey });
-        Save();
+        string id;
+        lock (_sync)
+        {
+            id = Guid.NewGuid().ToString("N")[..8];
+            _store.Add(new PersistedEndpoint { Id = id, Name = name, BaseUrl = baseUrl, ApiKey = apiKey });
+            Save();
+        }
         Changed?.Invoke();
         _ = RefreshModelsAsync(id);
     }
 
     public void UpdateEndpoint(OllamaEndpoint endpoint)
     {
-        var s = _store.FirstOrDefault(x => x.Id == endpoint.Id);
-        if (s is null) return;
-        s.Name           = endpoint.Name;
-        s.BaseUrl        = endpoint.BaseUrl;
-        s.ApiKey         = endpoint.ApiKey;
-        s.IconId         = endpoint.IconId;
-        s.BadgeColor     = endpoint.BadgeColor;
-        s.TimeoutSeconds = endpoint.TimeoutSeconds;
-        Save();
+        lock (_sync)
+        {
+            var s = _store.FirstOrDefault(x => x.Id == endpoint.Id);
+            if (s is null) return;
+            s.Name           = endpoint.Name;
+            s.BaseUrl        = endpoint.BaseUrl;
+            s.ApiKey         = endpoint.ApiKey;
+            s.IconId         = endpoint.IconId;
+            s.BadgeColor     = endpoint.BadgeColor;
+            s.TimeoutSeconds = endpoint.TimeoutSeconds;
+            Save();
+        }
         Changed?.Invoke();
     }
 
     public void RemoveEndpoint(string endpointId)
     {
-        if (_pulls.TryGetValue(endpointId, out var ep))
+        lock (_sync)
         {
-            foreach (var (_, (_, cts)) in ep) cts.Cancel();
-            _pulls.Remove(endpointId);
+            if (_pulls.TryGetValue(endpointId, out var ep))
+            {
+                foreach (var (_, (_, cts)) in ep) cts.Cancel();
+                _pulls.Remove(endpointId);
+            }
+            _store.RemoveAll(s => s.Id == endpointId);
+            _errors.Remove(endpointId);
+            Save();
         }
-        _store.RemoveAll(s => s.Id == endpointId);
-        _errors.Remove(endpointId);
-        Save();
         Changed?.Invoke();
     }
 
@@ -101,20 +117,26 @@ public class OllamaEndpointService : IOllamaEndpointService
 
     public async Task RefreshModelsAsync(string endpointId, CancellationToken ct = default)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return;
+        string baseUrl;
+        string? apiKey;
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return;
+            baseUrl = stored.BaseUrl.TrimEnd('/');
+            apiKey  = stored.ApiKey;
+        }
 
         Interlocked.Increment(ref _loadingCount);
         Changed?.Invoke();
 
         try
         {
-            var baseUrl = stored.BaseUrl.TrimEnd('/');
             List<(string id, string display)> fetched;
 
             try
             {
-                fetched = await FetchAllModelsAsync(baseUrl, stored.ApiKey, ct);
+                fetched = await FetchAllModelsAsync(baseUrl, apiKey, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) when (IsTimeout(ex)
@@ -123,39 +145,50 @@ public class OllamaEndpointService : IOllamaEndpointService
                 // localhost timed out — retry with 127.0.0.1 to avoid IPv6/IPv4 ambiguity
                 var altUrl = baseUrl.Replace("localhost", "127.0.0.1", StringComparison.OrdinalIgnoreCase);
                 _log.LogDebug("Ollama: localhost timed out, retrying with {AltUrl}", altUrl);
-                fetched = await FetchAllModelsAsync(altUrl, stored.ApiKey, ct);
+                fetched = await FetchAllModelsAsync(altUrl, apiKey, ct);
                 // Persist the working URL so future fetches succeed immediately
-                stored.BaseUrl = altUrl;
+                lock (_sync)
+                {
+                    var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+                    if (stored is not null) stored.BaseUrl = altUrl;
+                }
                 _log.LogInformation("Ollama: updated endpoint {Id} URL to {Url}", endpointId, altUrl);
             }
 
-            var merged = new List<PersistedModel>();
-            foreach (var (id, display) in fetched)
+            lock (_sync)
             {
-                var existing = stored.Models.FirstOrDefault(m => m.Id == id);
-                merged.Add(new PersistedModel
+                var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+                if (stored is not null)
                 {
-                    Id          = id,
-                    DisplayName = display,
-                    IsHidden    = existing?.IsHidden ?? false,
-                });
+                    var merged = new List<PersistedModel>();
+                    foreach (var (id, display) in fetched)
+                    {
+                        var existing = stored.Models.FirstOrDefault(m => m.Id == id);
+                        merged.Add(new PersistedModel
+                        {
+                            Id          = id,
+                            DisplayName = display,
+                            IsHidden    = existing?.IsHidden ?? false,
+                        });
+                    }
+                    // Preserve pull-error and in-progress entries not yet returned by the server
+                    foreach (var m in stored.Models.Where(m => m.PullError is not null || m.IsPulling))
+                    {
+                        if (!merged.Any(x => x.Id == m.Id))
+                            merged.Add(m);
+                    }
+                    stored.Models = merged;
+                    _errors.Remove(endpointId);
+                    Save();
+                }
             }
-            // Preserve pull-error and in-progress entries not yet returned by the server
-            foreach (var m in stored.Models.Where(m => m.PullError is not null || m.IsPulling))
-            {
-                if (!merged.Any(x => x.Id == m.Id))
-                    merged.Add(m);
-            }
-            stored.Models = merged;
-            _errors.Remove(endpointId);
-            Save();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Ollama: failed to refresh models for endpoint {Id} ({Type}: {Msg})",
                 endpointId, ex.GetType().Name, ex.Message);
-            _errors[endpointId] = BuildErrorHint(stored.BaseUrl, ex);
+            lock (_sync) _errors[endpointId] = BuildErrorHint(baseUrl, ex);
         }
         finally
         {
@@ -166,21 +199,27 @@ public class OllamaEndpointService : IOllamaEndpointService
 
     public async Task RefreshAllAsync(CancellationToken ct = default)
     {
-        foreach (var ep in _store.ToList())
+        List<string> ids;
+        lock (_sync) ids = _store.Select(x => x.Id).ToList();
+        foreach (var id in ids)
         {
             if (ct.IsCancellationRequested) break;
-            await RefreshModelsAsync(ep.Id, ct);
+            await RefreshModelsAsync(id, ct);
         }
     }
 
     private async Task RecoverAndRefreshAsync()
     {
         // Collect models that were mid-pull when the app last closed
-        var stale = _store
-            .SelectMany(ep => ep.Models
-                .Where(m => m.IsPulling)
-                .Select(m => (EndpointId: ep.Id, ModelId: m.Id)))
-            .ToList();
+        List<(string EndpointId, string ModelId)> stale;
+        lock (_sync)
+        {
+            stale = _store
+                .SelectMany(ep => ep.Models
+                    .Where(m => m.IsPulling)
+                    .Select(m => (EndpointId: ep.Id, ModelId: m.Id)))
+                .ToList();
+        }
 
         await RefreshAllAsync();
 
@@ -201,98 +240,129 @@ public class OllamaEndpointService : IOllamaEndpointService
 
     public void ToggleModelHidden(string endpointId, string modelId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return;
-        var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
-        if (m is null) return;
-        m.IsHidden = !m.IsHidden;
-        Save();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return;
+            var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
+            if (m is null) return;
+            m.IsHidden = !m.IsHidden;
+            Save();
+        }
         Changed?.Invoke();
     }
 
     public void SetModelDisplayName(string endpointId, string modelId, string displayName)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return;
-        var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
-        if (m is null) return;
-        m.CustomName = displayName;
-        Save();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return;
+            var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
+            if (m is null) return;
+            m.CustomName = displayName;
+            Save();
+        }
         Changed?.Invoke();
     }
 
     public void ResetModelDisplayName(string endpointId, string modelId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return;
-        var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
-        if (m is null) return;
-        m.CustomName = null;
-        Save();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return;
+            var m = stored.Models.FirstOrDefault(x => x.Id == modelId);
+            if (m is null) return;
+            m.CustomName = null;
+            Save();
+        }
         Changed?.Invoke();
     }
 
     public string GetModelDisplayName(string endpointId, string modelId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return modelId;
-        return stored.Models.FirstOrDefault(x => x.Id == modelId)?.DisplayName ?? modelId;
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return modelId;
+            return stored.Models.FirstOrDefault(x => x.Id == modelId)?.DisplayName ?? modelId;
+        }
     }
 
     public OllamaEndpoint? GetEndpoint(string endpointId)
     {
-        var s = _store.FirstOrDefault(x => x.Id == endpointId);
-        return s is null ? null : new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds);
+        lock (_sync)
+        {
+            var s = _store.FirstOrDefault(x => x.Id == endpointId);
+            return s is null ? null : new OllamaEndpoint(s.Id, s.Name, s.BaseUrl, s.ApiKey, s.IconId, s.BadgeColor, s.TimeoutSeconds);
+        }
     }
 
     public IReadOnlyList<OllamaModel> GetVisibleModels(string endpointId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return [];
-        return stored.Models
-            .Where(m => !m.IsHidden && !m.IsPulling && m.PullError is null)
-            .Select(m => new OllamaModel { Id = m.Id, DisplayName = m.DisplayName })
-            .ToList();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return [];
+            return stored.Models
+                .Where(m => !m.IsHidden && !m.IsPulling && m.PullError is null)
+                .Select(m => new OllamaModel { Id = m.Id, DisplayName = m.DisplayName })
+                .ToList();
+        }
     }
 
     public IReadOnlyList<OllamaModel> GetAllModels(string endpointId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return [];
-        return stored.Models
-            .Select(m => new OllamaModel
-            {
-                Id           = m.Id,
-                DisplayName  = m.CustomName ?? m.DisplayName,
-                IsCustomName = m.CustomName is not null,
-                IsHidden     = m.IsHidden,
-                IsPulling    = m.IsPulling,
-                PullError    = m.PullError,
-            })
-            .ToList();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return [];
+            return stored.Models
+                .Select(m => new OllamaModel
+                {
+                    Id           = m.Id,
+                    DisplayName  = m.CustomName ?? m.DisplayName,
+                    IsCustomName = m.CustomName is not null,
+                    IsHidden     = m.IsHidden,
+                    IsPulling    = m.IsPulling,
+                    PullError    = m.PullError,
+                })
+                .ToList();
+        }
     }
 
     public void ClearModelError(string endpointId, string modelId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return;
-        stored.Models.RemoveAll(m => m.Id == modelId && m.PullError is not null);
-        Save();
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return;
+            stored.Models.RemoveAll(m => m.Id == modelId && m.PullError is not null);
+            Save();
+        }
         Changed?.Invoke();
     }
 
     // ── Pull model ────────────────────────────────────────────────────────
 
-    public bool   IsModelPulling(string endpointId, string modelId) =>
-        _pulls.TryGetValue(endpointId, out var ep) && ep.ContainsKey(modelId);
+    public bool IsModelPulling(string endpointId, string modelId)
+    {
+        lock (_sync) return _pulls.TryGetValue(endpointId, out var ep) && ep.ContainsKey(modelId);
+    }
 
-    public string? GetPullStatus(string endpointId, string modelId) =>
-        _pulls.TryGetValue(endpointId, out var ep) && ep.TryGetValue(modelId, out var s) ? s.Status : null;
+    public string? GetPullStatus(string endpointId, string modelId)
+    {
+        lock (_sync) return _pulls.TryGetValue(endpointId, out var ep) && ep.TryGetValue(modelId, out var s) ? s.Status : null;
+    }
 
     public string? GetPullError(string endpointId, string modelId)
     {
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        return stored?.Models.FirstOrDefault(m => m.Id == modelId)?.PullError;
+        lock (_sync)
+        {
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            return stored?.Models.FirstOrDefault(m => m.Id == modelId)?.PullError;
+        }
     }
 
     public Task StartPullAsync(string endpointId, string modelId)
@@ -300,101 +370,116 @@ public class OllamaEndpointService : IOllamaEndpointService
         modelId = modelId.Trim();
         if (string.IsNullOrEmpty(modelId)) return Task.CompletedTask;
 
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is null) return Task.CompletedTask;
+        CancellationTokenSource? cts = null;
+        string? pullBaseUrl = null, pullApiKey = null;
 
-        if (modelId.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase))
+        lock (_sync)
         {
-            // Cloud-routed models proxy to an external API and need provider keys in the container.
-            stored.Models.RemoveAll(m => m.Id == modelId && (m.IsPulling || m.PullError is not null));
-            stored.Models.Add(new PersistedModel
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is null) return Task.CompletedTask;
+
+            if (modelId.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase))
             {
-                Id          = modelId,
-                DisplayName = InferDisplayName(modelId),
-                IsHidden    = true,
-                PullError   = $"\"{modelId}\" is a cloud-routed model. Pulling cloud models via DiffThis " +
-                              "is not supported — use the Ollama CLI directly: ollama pull {modelId}. " +
-                              "Once available, the model will appear here after a Refresh and can be used normally, " +
-                              "provided the required provider API key is set in your Ollama container " +
-                              "(e.g. MINIMAX_API_KEY for MiniMax models).",
-            });
-            Save();
-            Changed?.Invoke();
-            return Task.CompletedTask;
+                stored.Models.RemoveAll(m => m.Id == modelId && (m.IsPulling || m.PullError is not null));
+                stored.Models.Add(new PersistedModel
+                {
+                    Id          = modelId,
+                    DisplayName = InferDisplayName(modelId),
+                    IsHidden    = true,
+                    PullError   = $"\"{modelId}\" is a cloud-routed model. Pulling cloud models via DiffThis " +
+                                  $"is not supported — use the Ollama CLI directly: ollama pull {modelId}. " +
+                                  "Once available, the model will appear here after a Refresh and can be used normally, " +
+                                  "provided the required provider API key is set in your Ollama container " +
+                                  "(e.g. MINIMAX_API_KEY for MiniMax models).",
+                });
+                Save();
+                // cts stays null — Changed fires below, no background task started
+            }
+            else
+            {
+                if (_pulls.TryGetValue(endpointId, out var existing) && existing.ContainsKey(modelId))
+                    return Task.CompletedTask;
+
+                stored.Models.RemoveAll(m => m.Id == modelId && (m.IsPulling || m.PullError is not null));
+                if (stored.Models.Any(m => m.Id == modelId))
+                    return Task.CompletedTask;
+
+                stored.Models.Add(new PersistedModel
+                {
+                    Id = modelId, DisplayName = InferDisplayName(modelId), IsHidden = true, IsPulling = true
+                });
+                Save();
+
+                cts = new CancellationTokenSource();
+                if (!_pulls.ContainsKey(endpointId)) _pulls[endpointId] = new();
+                _pulls[endpointId][modelId] = ("Starting…", cts);
+                pullBaseUrl = stored.BaseUrl;
+                pullApiKey  = stored.ApiKey;
+            }
         }
 
-        if (IsModelPulling(endpointId, modelId)) return Task.CompletedTask;
-
-        // Remove any prior error/pulling placeholder for this model so we start fresh
-        stored.Models.RemoveAll(m => m.Id == modelId && (m.IsPulling || m.PullError is not null));
-
-        // If the model already exists as a real (non-error) entry, nothing to do
-        if (stored.Models.Any(m => m.Id == modelId))
-            return Task.CompletedTask;
-
-        // Add a locked placeholder so it appears immediately in the list
-        stored.Models.Add(new PersistedModel
-        {
-            Id = modelId, DisplayName = InferDisplayName(modelId), IsHidden = true, IsPulling = true
-        });
-        Save();
-
-        var cts = new CancellationTokenSource();
-        if (!_pulls.ContainsKey(endpointId)) _pulls[endpointId] = new();
-        _pulls[endpointId][modelId] = ("Starting…", cts);
         Changed?.Invoke();
 
-        _ = Task.Run(() => DoPullAsync(endpointId, modelId, stored.BaseUrl, stored.ApiKey, cts.Token));
+        if (cts is not null)
+            _ = Task.Run(() => DoPullAsync(endpointId, modelId, pullBaseUrl!, pullApiKey, cts.Token));
+
         return Task.CompletedTask;
     }
 
     public void CancelPull(string endpointId, string modelId)
     {
-        if (_pulls.TryGetValue(endpointId, out var ep) && ep.TryGetValue(modelId, out var state))
-            state.Cts.Cancel();
+        lock (_sync)
+        {
+            if (_pulls.TryGetValue(endpointId, out var ep) && ep.TryGetValue(modelId, out var state))
+                state.Cts.Cancel();
+        }
     }
 
     private void SetPullStatus(string endpointId, string modelId, string status)
     {
-        if (_pulls.TryGetValue(endpointId, out var ep) && ep.ContainsKey(modelId))
+        lock (_sync)
         {
-            ep[modelId] = (status, ep[modelId].Cts);
-            Changed?.Invoke();
+            if (_pulls.TryGetValue(endpointId, out var ep) && ep.ContainsKey(modelId))
+                ep[modelId] = (status, ep[modelId].Cts);
+            else
+                return;
         }
+        Changed?.Invoke();
     }
 
     private async Task SetPullSucceeded(string endpointId, string modelId)
     {
-        if (_pulls.TryGetValue(endpointId, out var ep)) ep.Remove(modelId);
-
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is not null)
+        lock (_sync)
         {
-            stored.Models.RemoveAll(m => m.Id == modelId && m.IsPulling);
-            Save();
+            if (_pulls.TryGetValue(endpointId, out var ep)) ep.Remove(modelId);
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is not null)
+            {
+                stored.Models.RemoveAll(m => m.Id == modelId && m.IsPulling);
+                Save();
+            }
         }
-
         // Refresh so the real entry (from Ollama) replaces the placeholder
         await RefreshModelsAsync(endpointId);
     }
 
     private void SetPullFailed(string endpointId, string modelId, string reason)
     {
-        if (_pulls.TryGetValue(endpointId, out var ep)) ep.Remove(modelId);
-
-        var stored = _store.FirstOrDefault(x => x.Id == endpointId);
-        if (stored is not null)
+        lock (_sync)
         {
-            // Transition placeholder from IsPulling → PullError (keep it in the list)
-            var placeholder = stored.Models.FirstOrDefault(m => m.Id == modelId && m.IsPulling);
-            if (placeholder is not null)
+            if (_pulls.TryGetValue(endpointId, out var ep)) ep.Remove(modelId);
+            var stored = _store.FirstOrDefault(x => x.Id == endpointId);
+            if (stored is not null)
             {
-                placeholder.IsPulling = false;
-                placeholder.PullError = reason;
+                var placeholder = stored.Models.FirstOrDefault(m => m.Id == modelId && m.IsPulling);
+                if (placeholder is not null)
+                {
+                    placeholder.IsPulling = false;
+                    placeholder.PullError = reason;
+                }
+                Save();
             }
-            Save();
         }
-
         Changed?.Invoke();
     }
 

@@ -106,14 +106,17 @@ public class AiCacheService
     {
         var key = DiffKey(repoPath, baseRef, compareRef);
         var arr = indices.ToArray();
-        if (arr.Length == 0)
-            _visibility.Remove(key);
-        else
+        if (_visibility.TryGetValue(key, out var s))
         {
-            if (_visibility.TryGetValue(key, out var s))
-                _visibility[key] = s with { HiddenFiles = arr };
+            var updated = s with { HiddenFiles = arr };
+            if (updated.HiddenFiles.Length == 0 && updated.HiddenRunKeys.Length == 0 && updated.FileContextLines is null or { Count: 0 })
+                _visibility.Remove(key);
             else
-                _visibility[key] = new VisibilityState(arr, []);
+                _visibility[key] = updated;
+        }
+        else if (arr.Length > 0)
+        {
+            _visibility[key] = new VisibilityState(arr, []);
         }
         SaveVisibility();
     }
