@@ -2,7 +2,7 @@
 
 ## Ollama Logo
 
-The Ollama logo (`icon-ollama` in `images.css`) is the property of Ollama, Inc. and is used in accordance with the [Ollama brand guidelines](https://ollama.com/brand).
+The Ollama logo (`icon-ollama` in `images.css`) is the property of Ollama, Inc. For more information, see [ollama.com](https://ollama.com).
 
 ---
 
