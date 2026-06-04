@@ -15,7 +15,7 @@ CSS class names follow the pattern `.gi-{name}` for icons with unique filenames,
 ### Contributors
 
 | Author | URL | License |
-|--------|-----|---------|
+| ------ | --- | ------- |
 | Lorc | http://lorcblog.blogspot.com | CC BY 3.0 |
 | Delapouite | https://delapouite.com | CC BY 3.0 |
 | John Colburn | http://ninmunanmu.com | CC BY 3.0 |
@@ -54,4 +54,4 @@ CSS class names follow the pattern `.gi-{name}` for icons with unique filenames,
 | various-artists | — | CC BY 3.0 |
 
 *Per the CC BY 3.0 license, attribution is required in derivative works.*
-*More info and the full icon catalog: https://game-icons.net*
+*More info and the full icon catalog: [game-icons.net](https://game-icons.net)*
