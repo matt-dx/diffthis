@@ -303,10 +303,14 @@ else
     protected override void OnParametersSet()
     {
         if (_lastDiff == Diff) return;
+        var prevDiff = _lastDiff;
         _lastDiff = Diff;
         _selectedFeature  = null;
         _selectedKey      = null;
-        AiCache.ClearRunState();
+        // Only clear run state when the diff actually changes — not on first mount after
+        // navigation, where prevDiff is null but the runs from the previous render are still valid.
+        if (prevDiff is not null)
+            AiCache.ClearRunState();
         _explainAddModel  = Settings.PreferredExplainModel;
         _reviewAddModel   = Settings.PreferredReviewModel;
         _pendingDeleteKey = null;
