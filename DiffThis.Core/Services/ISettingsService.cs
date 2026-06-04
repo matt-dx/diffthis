@@ -25,6 +25,9 @@ public interface ISettingsService
     // ── MainView layout ────────────────────────────────────────────────────
     bool MainViewSideBySide { get; set; }  // default: false (tabbed)
 
+    // ── Ollama endpoints ───────────────────────────────────────────────────
+    string OllamaEndpointsJson { get; set; }  // JSON-serialised List<PersistedEndpoint>
+
     // ── Unsupported / experimental features ───────────────────────────────
     bool AnalysisLinksEnabled { get; set; }  // default: false
 

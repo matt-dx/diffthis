@@ -15,14 +15,16 @@ namespace DiffThis.AI.Shared.Services;
 /// </summary>
 public class PromptService
 {
+    public const int MaxDiffChars = 60_000;
+
     private static readonly string UserPromptDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                      "DiffThis", "prompts");
 
-    public string BuildReviewPrompt(DiffResult diff, int maxDiffChars = 60_000)
+    public string BuildReviewPrompt(DiffResult diff, int maxDiffChars = MaxDiffChars)
         => Render(LoadTemplate("review"), diff, maxDiffChars);
 
-    public string BuildExplainPrompt(DiffResult diff, int maxDiffChars = 60_000)
+    public string BuildExplainPrompt(DiffResult diff, int maxDiffChars = MaxDiffChars)
         => Render(LoadTemplate("explain"), diff, maxDiffChars);
 
     /// <summary>
@@ -33,11 +35,11 @@ public class PromptService
     /// <c>User</c>   contains only the raw diff content.
     /// </para>
     /// </summary>
-    public (string System, string User) BuildReviewPromptParts(DiffResult diff, int maxDiffChars = 60_000)
+    public (string System, string User) BuildReviewPromptParts(DiffResult diff, int maxDiffChars = MaxDiffChars)
         => RenderParts(LoadTemplate("review"), diff, maxDiffChars);
 
     /// <inheritdoc cref="BuildReviewPromptParts"/>
-    public (string System, string User) BuildExplainPromptParts(DiffResult diff, int maxDiffChars = 60_000)
+    public (string System, string User) BuildExplainPromptParts(DiffResult diff, int maxDiffChars = MaxDiffChars)
         => RenderParts(LoadTemplate("explain"), diff, maxDiffChars);
 
     // ── Template loading ──────────────────────────────────────────────────

@@ -4,12 +4,18 @@
 @inject IClaudeModelService ModelService
 @inject ICopilotAuthService CopilotAuth
 @inject ICopilotModelService CopilotModelService
+@inject IOllamaEndpointService OllamaEndpoints
 @inject AiCacheService AiCache
 @implements IDisposable
+@using DiffThis.UI.Data
 
-<div class="page narrow">
+<div class="settings-view">
+<div class="settings-header">
     <a class="back-link" href="@_returnUrl">← Back</a>
-    <h1 class="page-h1">Settings</h1>
+    <span class="settings-header-title">Settings</span>
+</div>
+<div class="settings-body">
+<div class="page narrow">
 
     <section class="settings-section">
         <p class="section-title">Appearance</p>
@@ -39,7 +45,7 @@
     </section>
 
     <section class="settings-section">
-        <p class="section-title"><span class="icon icon-claude" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>Claude AI</p>
+        <p class="section-title"><span class="icon icon-claude" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#e07b39"></span>Claude AI</p>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
@@ -70,35 +76,7 @@
                 </div>
                 <button class="btn btn-sm" @onclick="ReloadAuth">Reload</button>
             </div>
-        </div>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Tool use</p>
-                    <p class="setting-desc">Allow Claude to read files and run commands when reviewing. Produces richer results but uses more turns.</p>
-                </div>
-                <label class="toggle">
-                    <input type="checkbox" @bind="aiToolsEnabled" @bind:after="SaveAiTools" />
-                    <span class="toggle-track"></span>
-                </label>
-            </div>
-            <div class="setting-row" style="margin-top:12px">
-                <div>
-                    <p class="setting-label">Max turns</p>
-                    <p class="setting-desc">Maximum agentic turns per request. Higher values allow deeper analysis; 0 means unlimited.</p>
-                </div>
-                <select class="select-sm" @bind="aiMaxTurns" @bind:after="SaveAiMaxTurns">
-                    <option value="1">1 turn</option>
-                    <option value="3">3 turns</option>
-                    <option value="5">5 turns</option>
-                    <option value="10">10 turns</option>
-                    <option value="20">20 turns</option>
-                    <option value="0">Unlimited</option>
-                </select>
-            </div>
-            <p class="setting-desc" style="font-style:italic;margin-top:12px">These are defaults. You can override them per-run in the diff view.</p>
-        </div>
-        <div class="setting-card">
+            <hr class="setting-card-divider" />
             <div class="setting-row">
                 <div>
                     <button class="collapsible-label" @onclick="() => _modelsExpanded = !_modelsExpanded">
@@ -110,14 +88,10 @@
                         {
                             <span>@ModelService.Models.Count model@(ModelService.Models.Count == 1 ? "" : "s") · last updated @ModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
                         }
-                        else
-                        {
-                            <span>Never fetched</span>
-                        }
+                        else { <span>Never fetched</span> }
                     </p>
                 </div>
-                <button class="btn btn-sm" disabled="@ModelService.IsLoading"
-                        @onclick="RefreshModels">
+                <button class="btn btn-sm" disabled="@ModelService.IsLoading" @onclick="RefreshModels">
                     @(ModelService.IsLoading ? "Refreshing…" : "Refresh")
                 </button>
             </div>
@@ -128,12 +102,9 @@
                     {
                         var capturedId = model.Id;
                         <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
-                            <div class="model-list-meta">
-                                <code class="model-list-id">@model.Id</code>
-                            </div>
+                            <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
                             <div class="model-list-name-row">
-                                <input class="model-name-input"
-                                       value="@model.DisplayName"
+                                <input class="model-name-input" value="@model.DisplayName"
                                        @onchange="e => ModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
                                        title="Edit display name" />
                                 @if (model.IsCustomName)
@@ -152,15 +123,43 @@
                 </div>
             }
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Tool use</p>
+                    <p class="setting-desc">Allow Claude to read files and run commands when reviewing. Produces richer results but uses more turns.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="aiToolsEnabled" @bind:after="SaveAiTools" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            @if (aiToolsEnabled)
+            {
+            <div class="setting-row" style="margin-top:12px">
+                <div>
+                    <p class="setting-label">Max turns</p>
+                    <p class="setting-desc">Maximum agentic turns per request. Higher values allow deeper analysis; 0 means unlimited.</p>
+                </div>
+                <select class="select-sm" @bind="aiMaxTurns" @bind:after="SaveAiMaxTurns">
+                    <option value="1">1 turn</option>
+                    <option value="3">3 turns</option>
+                    <option value="5">5 turns</option>
+                    <option value="10">10 turns</option>
+                    <option value="20">20 turns</option>
+                    <option value="0">Unlimited</option>
+                </select>
+            </div>
+            }
+        </div>
     </section>
 
     <section class="settings-section">
-        <p class="section-title"><span class="icon icon-copilot" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;"></span>GitHub Copilot</p>
+        <p class="section-title"><span class="icon icon-copilot" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#8534F3"></span>GitHub Copilot</p>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
                     <p class="setting-label">Account</p>
-
                     @if (CopilotAuth.State == CopilotAuthState.Authenticated)
                     {
                         <p class="setting-desc">
@@ -175,10 +174,7 @@
                     else if (CopilotAuth.State == CopilotAuthState.PendingDeviceFlow
                              && _deviceFlowInfo is not null)
                     {
-                        <p class="setting-desc">
-                            <span class="auth-dot auth-pending"></span>
-                            Waiting for authorization…
-                        </p>
+                        <p class="setting-desc"><span class="auth-dot auth-pending"></span>Waiting for authorization…</p>
                         <div class="device-flow-card">
                             <p class="device-flow-label">Enter this code at <strong>github.com/login/device</strong></p>
                             <div class="device-flow-code-row">
@@ -199,7 +195,6 @@
                         }
                     }
                 </div>
-
                 <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
                     @if (CopilotAuth.State == CopilotAuthState.Authenticated)
                     {
@@ -217,8 +212,7 @@
                     }
                 </div>
             </div>
-        </div>
-        <div class="setting-card">
+            <hr class="setting-card-divider" />
             <div class="setting-row">
                 <div>
                     <button class="collapsible-label" @onclick="() => _copilotModelsExpanded = !_copilotModelsExpanded">
@@ -231,21 +225,14 @@
                             <span>@CopilotModelService.Models.Count model@(CopilotModelService.Models.Count == 1 ? "" : "s") · last updated @CopilotModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
                             if (CopilotModelService.IsUsingDefaults)
                             {
-                                <span class="auth-plan" title="API fetch failed or returned no results; using built-in model list"> · built-in list</span>
+                                <span class="auth-plan" title="API fetch failed; using built-in model list"> · built-in list</span>
                             }
-                            else
-                            {
-                                <span class="auth-plan"> · from API</span>
-                            }
+                            else { <span class="auth-plan"> · from API</span> }
                         }
-                        else
-                        {
-                            <span>Never fetched</span>
-                        }
+                        else { <span>Never fetched</span> }
                     </p>
                 </div>
-                <button class="btn btn-sm" disabled="@CopilotModelService.IsLoading"
-                        @onclick="RefreshCopilotModels">
+                <button class="btn btn-sm" disabled="@CopilotModelService.IsLoading" @onclick="RefreshCopilotModels">
                     @(CopilotModelService.IsLoading ? "Refreshing…" : "Refresh")
                 </button>
             </div>
@@ -256,12 +243,9 @@
                     {
                         var capturedId = model.Id;
                         <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
-                            <div class="model-list-meta">
-                                <code class="model-list-id">@model.Id</code>
-                            </div>
+                            <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
                             <div class="model-list-name-row">
-                                <input class="model-name-input"
-                                       value="@model.DisplayName"
+                                <input class="model-name-input" value="@model.DisplayName"
                                        @onchange="e => CopilotModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
                                        title="Edit display name" />
                                 @if (model.IsCustomName)
@@ -283,59 +267,156 @@
     </section>
 
     <section class="settings-section">
-        <p class="section-title">Repository History</p>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Recent repositories to show</p>
-                    <p class="setting-desc">Maximum shown on the home screen</p>
+        <p class="section-title"><span class="icon icon-ollama" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#D68E42"></span>Ollama</p>
+
+        @foreach (var ep in OllamaEndpoints.Endpoints)
+        {
+            var epId   = ep.Id;
+            var models = OllamaEndpoints.GetAllModels(epId);
+            OllamaEndpoints.Errors.TryGetValue(epId, out var epError);
+
+            <div class="setting-card">
+                <!-- Config row: icon + name + color + url + remove -->
+                <div class="setting-row">
+                    <button class="ollama-icon-btn" title="Change icon"
+                            style="color:@ep.BadgeColor"
+                            @onclick="() => OpenBadgePicker(epId)">
+                        <span class="icon @OllamaIconCssClass(ep.IconId)" style="width:18px;height:18px"></span>
+                    </button>
+                    <input class="model-name-input" style="width:110px;font-weight:600;text-align:left"
+                           value="@ep.Name" placeholder="Name"
+                           @onchange="e => UpdateOllamaEndpointName(epId, e.Value?.ToString() ?? ep.Name)" />
+                    <input type="color" value="@ep.BadgeColor"
+                           style="width:32px;height:28px;padding:2px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent"
+                           title="Badge colour"
+                           @onchange="e => UpdateOllamaEndpointColor(epId, e.Value?.ToString() ?? ep.BadgeColor)" />
+                    <input class="model-name-input" style="flex:1;min-width:0;text-align:left"
+                           value="@ep.BaseUrl" placeholder="http://localhost:11434"
+                           @onchange="e => UpdateOllamaEndpointUrl(epId, e.Value?.ToString() ?? ep.BaseUrl)" />
+                    <button class="btn btn-sm btn-danger" title="Remove endpoint"
+                            @onclick="() => OllamaEndpoints.RemoveEndpoint(epId)">Remove</button>
                 </div>
-                <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
-                    @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
-                    {
-                        <option value="@n">@n</option>
-                    }
-                </select>
+
+                <!-- API key + timeout row -->
+                <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <input class="model-name-input" style="width:260px;text-align:left"
+                           value="@(ep.ApiKey ?? "")" placeholder="API key (optional)"
+                           type="password"
+                           @onchange="e => UpdateOllamaEndpointApiKey(epId, e.Value?.ToString())" />
+                    <input class="model-name-input" style="width:72px;text-align:right"
+                           type="number" min="1"
+                           value="@(ep.TimeoutSeconds?.ToString() ?? "")"
+                           placeholder="∞"
+                           title="Request timeout in seconds. Leave blank for no timeout."
+                           @onchange="e => UpdateOllamaEndpointTimeout(epId, e.Value?.ToString())" />
+                    <span class="setting-desc" style="margin:0">s timeout (blank = none)</span>
+                </div>
+
+                @if (epError is not null)
+                {
+                    <p class="setting-desc" style="margin-top:6px;color:var(--del-fg);word-break:break-word">@epError</p>
+                }
+
+                <!-- Available models (merged) -->
+                <hr class="setting-card-divider" />
+                <div class="setting-row">
+                    <div>
+                        <button class="collapsible-label" @onclick="() => ToggleOllamaModels(epId)">
+                            <span class="collapsible-chevron @(_ollamaModelsExpanded.Contains(epId) ? "open" : "")">›</span>
+                            <p class="setting-label" style="display:inline">Available models</p>
+                        </button>
+                        <p class="setting-desc">
+                            @{ var realCount = models.Count(m => !m.IsPulling); var pullingCount = models.Count(m => m.IsPulling); }
+                            @if (realCount > 0) { <span>@realCount model@(realCount == 1 ? "" : "s")</span> }
+                            else if (epError is not null) { <span>Failed to fetch</span> }
+                            else { <span>Never fetched</span> }
+                            @if (pullingCount > 0) { <span> · @pullingCount pulling</span> }
+                        </p>
+                    </div>
+                    <button class="btn btn-sm" disabled="@OllamaEndpoints.IsLoading"
+                            @onclick="() => RefreshOllamaEndpoint(epId)">
+                        @(OllamaEndpoints.IsLoading ? "Refreshing…" : "Refresh")
+                    </button>
+                </div>
+                @if (_ollamaModelsExpanded.Contains(epId))
+                {
+                    <div class="model-list">
+                        @foreach (var model in models)
+                        {
+                            var mid = model.Id;
+                            @if (model.IsPulling)
+                            {
+                                var pullStatus = OllamaEndpoints.GetPullStatus(epId, mid) ?? "Starting…";
+                                <div class="model-list-item">
+                                    <div class="model-list-meta"><code class="model-list-id">@mid</code></div>
+                                    <div class="model-list-name-row">
+                                        <span class="model-name-input" style="flex:1;cursor:default;color:var(--fg-secondary)">@pullStatus</span>
+                                        <span class="analysis-spinner" style="width:14px;height:14px;margin:0 2px;flex-shrink:0"></span>
+                                        <button class="model-visibility-btn" title="Cancel pull"
+                                                @onclick="() => OllamaEndpoints.CancelPull(epId, mid)">✕</button>
+                                    </div>
+                                </div>
+                            }
+                            else if (model.PullError is not null)
+                            {
+                                var capturedError = model.PullError;
+                                <div class="model-list-item">
+                                    <div class="model-list-meta"><code class="model-list-id" style="color:var(--del-fg)">@mid</code></div>
+                                    <div class="model-list-name-row">
+                                        <span class="model-name-input" style="flex:1;cursor:default;color:var(--del-fg)">Pull failed</span>
+                                        <button class="model-visibility-btn" title="View error details"
+                                                @onclick="() => ShowPullError(mid, capturedError)">ⓘ</button>
+                                        <button class="model-visibility-btn" title="Clear"
+                                                @onclick="() => OllamaEndpoints.ClearModelError(epId, mid)">✕</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
+                                    <div class="model-list-meta"><code class="model-list-id">@mid</code></div>
+                                    <div class="model-list-name-row">
+                                        <input class="model-name-input" value="@model.DisplayName"
+                                               @onchange="e => OllamaEndpoints.SetModelDisplayName(epId, mid, e.Value?.ToString() ?? model.DisplayName)"
+                                               title="Edit display name" />
+                                        @if (model.IsCustomName)
+                                        {
+                                            <button class="model-reset-btn" title="Reset to default name"
+                                                    @onclick="() => OllamaEndpoints.ResetModelDisplayName(epId, mid)">↺</button>
+                                        }
+                                        <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                                title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                                @onclick="() => OllamaEndpoints.ToggleModelHidden(epId, mid)">
+                                            <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        <!-- Pull a new model -->
+                        @{ var pullInput = _pullInputs.GetValueOrDefault(epId, ""); }
+                        <div class="model-list-item" style="gap:6px;background:none;border:none;padding:6px 0 2px">
+                            <input class="model-name-input" style="flex:1;text-align:left" placeholder="Model name (e.g. llama3.2)"
+                                   value="@pullInput"
+                                   @oninput="e => SetPullInput(epId, e.Value?.ToString())"
+                                   @onkeydown="e => OnPullKeyDown(e, epId)" />
+                            <button class="btn btn-sm" disabled="@string.IsNullOrWhiteSpace(pullInput)"
+                                    @onclick="() => StartPull(epId)">Pull</button>
+                        </div>
+                    </div>
+                }
             </div>
+        }
+
+        @if (!OllamaEndpoints.Endpoints.Any())
+        {
+            <p class="setting-desc">No endpoints configured.</p>
+        }
+
+        <div class="setting-card" style="padding:10px 14px">
+            <button class="btn btn-sm" @onclick="AddOllamaEndpoint">+ Add Endpoint</button>
         </div>
     </section>
-
-    <section class="settings-section">
-        <p class="section-title">Data</p>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Clear history</p>
-                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
-                </div>
-                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
-            </div>
-        </div>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Cached results</p>
-                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored (Claude and GitHub Models).")</p>
-                </div>
-                <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
-                        @onclick="() => _showClearCacheConfirm = true">Clear</button>
-            </div>
-        </div>
-    </section>
-
-    @if (_showClearCacheConfirm)
-    {
-        <div class="modal-backdrop" @onclick="() => _showClearCacheConfirm = false">
-            <div class="modal" @onclick:stopPropagation>
-                <p class="modal-title">Clear cached results?</p>
-                <p class="modal-body">All @AiCache.Count stored AI response@(AiCache.Count == 1 ? "" : "s") will be deleted. This cannot be undone.</p>
-                <div class="modal-actions">
-                    <button class="btn btn-sm" @onclick="() => _showClearCacheConfirm = false">Cancel</button>
-                    <button class="btn btn-sm btn-danger" @onclick="ClearAiCache">Yes, clear</button>
-                </div>
-            </div>
-        </div>
-    }
 
     <section class="settings-section">
         <p class="section-title">Diff</p>
@@ -372,6 +453,57 @@
     </section>
 
     <section class="settings-section">
+        <p class="section-title">Data</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Recent repositories to show</p>
+                    <p class="setting-desc">Maximum shown on the home screen</p>
+                </div>
+                <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
+                    @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
+                    {
+                        <option value="@n">@n</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Clear history</p>
+                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
+            </div>
+        </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Cached results</p>
+                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored (Claude and GitHub Models).")</p>
+                </div>
+                <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
+                        @onclick="() => _showClearCacheConfirm = true">Clear</button>
+            </div>
+        </div>
+    </section>
+
+    @if (_showClearCacheConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearCacheConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear cached results?</p>
+                <p class="modal-body">All @AiCache.Count stored AI response@(AiCache.Count == 1 ? "" : "s") will be deleted. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearCacheConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearAiCache">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <section class="settings-section">
         <p class="section-title">About</p>
         <div class="setting-card">
             <div class="setting-row">
@@ -384,7 +516,60 @@
             </div>
         </div>
     </section>
-</div>
+
+</div><!-- .page.narrow -->
+</div><!-- .settings-body -->
+</div><!-- .settings-view -->
+
+@if (_pullErrorModal is not null)
+{
+    <div class="modal-backdrop" @onclick="() => _pullErrorModal = null">
+        <div class="modal" @onclick:stopPropagation>
+            <p class="modal-title" style="color:var(--del-fg)">Pull failed — @_pullErrorModal.Value.ModelId</p>
+            <p class="modal-body" style="word-break:break-word;white-space:pre-wrap">@_pullErrorModal.Value.Error</p>
+            <div class="modal-actions">
+                <button class="btn btn-sm" @onclick="() => _pullErrorModal = null">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_badgePickerEndpointId is not null)
+{
+    var pickerEp = OllamaEndpoints.GetEndpoint(_badgePickerEndpointId);
+    var filtered = string.IsNullOrWhiteSpace(_badgeSearch)
+        ? OllamaBadgeIcons.All
+        : OllamaBadgeIcons.All.Where(id => id.Contains(_badgeSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+
+    <div class="modal-backdrop" @onclick="CloseBadgePicker">
+        <div class="badge-picker-modal" @onclick:stopPropagation>
+            <div class="badge-picker-header">
+                <p class="badge-picker-title">Choose Badge</p>
+                <input class="badge-picker-search" type="search" placeholder="Search…"
+                       @bind="_badgeSearch" @bind:event="oninput" />
+                <button class="badge-picker-close" title="Close" @onclick="CloseBadgePicker">✕</button>
+            </div>
+            <span class="badge-picker-count">@filtered.Length icon@(filtered.Length == 1 ? "" : "s")</span>
+            <div class="badge-picker-grid">
+                @{ var epColor = pickerEp?.BadgeColor ?? "#888"; var currentId = pickerEp?.IconId ?? "ollama"; }
+                <button class="badge-picker-btn @(currentId == "ollama" ? "selected" : "")"
+                        title="Ollama" style="color:@epColor"
+                        @onclick='() => SelectBadge("ollama")'>
+                    <span class="icon icon-ollama" style="width:20px;height:20px"></span>
+                </button>
+                @foreach (var iconId in filtered)
+                {
+                    var capturedId = iconId;
+                    <button class="badge-picker-btn @(currentId == capturedId ? "selected" : "")"
+                            title="@capturedId" style="color:@epColor"
+                            @onclick="() => SelectBadge(capturedId)">
+                        <span class="icon gi-@capturedId" style="width:20px;height:20px"></span>
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "from")]
@@ -403,6 +588,14 @@
     private bool           _copilotModelsExpanded;
     private bool           _copilotSigningIn;
     private DeviceFlowInfo? _deviceFlowInfo;
+    private readonly HashSet<string>        _ollamaModelsExpanded = [];
+    private readonly Dictionary<string, string> _pullInputs       = [];
+    private (string ModelId, string Error)?     _pullErrorModal;
+    private string? _badgePickerEndpointId;
+    private string  _badgeSearch = "";
+
+    private static string OllamaIconCssClass(string iconId) =>
+        iconId == "ollama" ? "icon-ollama" : $"gi-{iconId}";
 
     protected override void OnInitialized()
     {
@@ -417,16 +610,101 @@
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
         CopilotAuth.StateChanged          += OnCopilotStateChanged;
+        OllamaEndpoints.Changed           += OnOllamaChanged;
     }
 
     private void OnModelsChanged()       => InvokeAsync(StateHasChanged);
     private void OnCopilotStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnOllamaChanged()       => InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         ModelService.ModelsChanged        -= OnModelsChanged;
         CopilotModelService.ModelsChanged -= OnModelsChanged;
         CopilotAuth.StateChanged          -= OnCopilotStateChanged;
+        OllamaEndpoints.Changed           -= OnOllamaChanged;
+    }
+
+    private void AddOllamaEndpoint() =>
+        OllamaEndpoints.AddEndpoint("Local", "http://localhost:11434");
+
+    private void ShowPullError(string modelId, string error) =>
+        _pullErrorModal = (modelId, error);
+
+    private void SetPullInput(string endpointId, string? value) =>
+        _pullInputs[endpointId] = value ?? "";
+
+    private void OnPullKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string endpointId)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_pullInputs.GetValueOrDefault(endpointId)))
+            _ = StartPull(endpointId);
+    }
+
+    private async Task StartPull(string endpointId)
+    {
+        var modelId = _pullInputs.GetValueOrDefault(endpointId, "").Trim();
+        if (string.IsNullOrEmpty(modelId)) return;
+        _pullInputs[endpointId] = "";
+        _ollamaModelsExpanded.Add(endpointId);
+        await OllamaEndpoints.StartPullAsync(endpointId, modelId);
+    }
+
+    private async Task RefreshOllamaEndpoint(string endpointId) =>
+        await OllamaEndpoints.RefreshModelsAsync(endpointId);
+
+    private void ToggleOllamaModels(string endpointId)
+    {
+        if (!_ollamaModelsExpanded.Remove(endpointId))
+            _ollamaModelsExpanded.Add(endpointId);
+    }
+
+    private void OpenBadgePicker(string endpointId)
+    {
+        _badgePickerEndpointId = endpointId;
+        _badgeSearch = "";
+    }
+
+    private void CloseBadgePicker() => _badgePickerEndpointId = null;
+
+    private void SelectBadge(string iconId)
+    {
+        if (_badgePickerEndpointId is null) return;
+        var ep = OllamaEndpoints.GetEndpoint(_badgePickerEndpointId);
+        if (ep is not null) OllamaEndpoints.UpdateEndpoint(ep with { IconId = iconId });
+        _badgePickerEndpointId = null;
+    }
+
+    private void UpdateOllamaEndpointName(string id, string name)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is not null) OllamaEndpoints.UpdateEndpoint(ep with { Name = name });
+    }
+
+    private void UpdateOllamaEndpointUrl(string id, string url)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is not null) OllamaEndpoints.UpdateEndpoint(ep with { BaseUrl = url });
+    }
+
+    private void UpdateOllamaEndpointApiKey(string id, string? key)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is not null)
+            OllamaEndpoints.UpdateEndpoint(ep with { ApiKey = string.IsNullOrEmpty(key) ? null : key });
+    }
+
+    private void UpdateOllamaEndpointColor(string id, string color)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is not null) OllamaEndpoints.UpdateEndpoint(ep with { BadgeColor = color });
+    }
+
+    private void UpdateOllamaEndpointTimeout(string id, string? value)
+    {
+        var ep = OllamaEndpoints.GetEndpoint(id);
+        if (ep is null) return;
+        var timeout = int.TryParse(value, out var secs) && secs > 0 ? secs : (int?)null;
+        OllamaEndpoints.UpdateEndpoint(ep with { TimeoutSeconds = timeout });
     }
 
     private async Task RefreshModels()        => await ModelService.RefreshAsync();

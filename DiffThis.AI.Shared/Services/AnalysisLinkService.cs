@@ -136,6 +136,13 @@ public partial class AnalysisLinkService : IAnalysisLinkService
             : [];
     }
 
+    public void LoadHiddenKeys(IEnumerable<AiRunKey> hiddenKeys)
+    {
+        _hiddenKeys.Clear();
+        foreach (var k in hiddenKeys) _hiddenKeys.Add(k);
+        _changed?.Invoke();
+    }
+
     public bool IsVisible(AiRunKey key) => !_hiddenKeys.Contains(key);
 
     public void SetVisible(AiRunKey key, bool visible)

@@ -121,6 +121,20 @@ public class GitService : IGitService
         };
     }
 
+    public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)
+    {
+        contextLines = Math.Clamp(contextLines, 0, 100_000);
+        var result = await Cli.Wrap("git")
+            .WithArguments(["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}", "--", filePath])
+            .WithWorkingDirectory(repositoryPath)
+            .WithValidation(CommandResultValidation.None)
+            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+
+        if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.StandardOutput)) return [];
+        var files = await Task.Run(() => ParseUnifiedDiff(result.StandardOutput, [], []), ct);
+        return files.FirstOrDefault()?.Hunks ?? [];
+    }
+
     private static Dictionary<string, (int additions, int deletions)> ParseNumstat(string output)
     {
         var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
