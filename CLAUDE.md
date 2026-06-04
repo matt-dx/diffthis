@@ -26,7 +26,7 @@ The MAUI entry-point project (`DiffThis\DiffThis.csproj`) is Windows-only; its t
 - `DiffThis.Core/` — domain models (`DiffResult`, `DiffFile`, etc.), shared interfaces
 - `DiffThis.AI.Shared/` — `PromptService`, `AiCacheService`, `AnalysisLinkService`, `DiffSessionService`
 - `DiffThis.AI.Claude/` — Claude CLI integration (`ClaudeService`, `ClaudeAuthService`, `ClaudeModelService`)
-- `DiffThis.AI.OpenAI/` — GitHub Copilot integration (`CopilotService`, `CopilotAuthService`, `CopilotModelService`)
+- `DiffThis.AI.OpenAI/` — GitHub Copilot + Ollama integration (`CopilotService`, `CopilotAuthService`, `CopilotModelService`, `OllamaService`, `OllamaEndpointService`)
 - `DiffThis.AI.OpenAI.Tests/` — integration tests for Copilot services
 
 In debug builds, the Blazor WebView exposes DevTools (F12) via `MauiProgram.cs`.
@@ -55,11 +55,13 @@ DiffThis is a Windows desktop app built on **.NET MAUI + Blazor Hybrid**. The MA
 
 > **Note:** `SyntaxHighlighter.GetLanguage` and `HighlightLines` currently write a debug log to `~/Desktop/hl-debug.txt`. This is a temporary debugging aid.
 
-**AI integration** — DiffThis supports two AI providers, both sharing the same `PromptService`, `AiCacheService`, and `AnalysisLinkService` plumbing.
+**AI integration** — DiffThis supports three AI providers, all sharing the same `PromptService`, `AiCacheService`, and `AnalysisLinkService` plumbing.
 
 *Claude* (`Services/ClaudeService.cs`): invokes the `claude` CLI as a subprocess, passing the diff as stdin and using `--output-format text`. `ClaudeAuthService` reads credentials from `~/.claude/.credentials.json` (written by the Claude CLI after `claude auth login`) and resolves the `claude` executable from well-known paths and `PATH`; actual OAuth token refresh is handled transparently by the CLI subprocess. `ClaudeModelService` fetches available models from `GET /v1/models` using the auth token, sorts by tier (opus → sonnet → haiku) then version, persists to `Preferences`, and fires `ModelsChanged`.
 
 *GitHub Copilot* (`DiffThis.AI.OpenAI/Services/`): `CopilotService` calls `https://api.githubcopilot.com/chat/completions` directly (OpenAI-compatible API). `CopilotAuthService` drives a device-code OAuth flow against GitHub (client ID `Iv1.b507a08c87ecfe98`, same as VS Code / copilot.vim), exchanges the OAuth token for short-lived Copilot session tokens via `api.github.com/copilot_internal/v2/token`, and stores credentials in SecureStorage. `CopilotModelService` fetches models from `https://api.githubcopilot.com/models`, filtering for chat-capable entries; falls back to a hardcoded list (gpt-4o, o1, o3-mini, claude-3.7-sonnet, gemini-2.0-flash, etc.) when the API is unavailable.
+
+*Ollama* (`DiffThis.AI.OpenAI/Services/`): `OllamaService` calls the Ollama `/api/chat` endpoint with a dynamically calculated `num_ctx` (estimated from prompt length to avoid truncation). `OllamaEndpointService` manages a list of user-configured endpoints (name, base URL, optional API key, optional per-endpoint timeout, icon/badge customization), each with its own model list fetched from `/api/tags` (falling back to `/v1/models`). Endpoints and models are persisted via `ISettingsService.OllamaEndpointsJson`. The service also handles model pulls via the streaming `/api/pull` endpoint with live progress, cancellation, and recovery of in-progress pulls across app restarts. A `localhost`→`127.0.0.1` retry handles IPv6/IPv4 ambiguity on Windows.
 
 Prompts are built by `PromptService`, which loads `review.md` / `explain.md` from embedded resources and renders `{{Variable}}` placeholders; users can override either template by placing a file at `%LOCALAPPDATA%\DiffThis\prompts\{name}.md`. The diff content is capped at 60,000 characters and truncated if longer. Available placeholders: `{{RepositoryName}}`, `{{BaseDisplay}}`, `{{CompareDisplay}}`, `{{FileCount}}`, `{{Additions}}`, `{{Deletions}}`, `{{FileList}}` (changed files with status + detected language), `{{DiffContent}}`. Results are cached per `(repoPath, baseRef, compareRef, feature, model, toolsEnabled, maxTurns, contextLines)` by `AiCacheService`, which persists to `%LOCALAPPDATA%\DiffThis\ai-cache.json` (max 500 entries, LRU-evicted to 400). The cache key type `AiRunKey` identifies a run configuration.
 
@@ -76,6 +78,8 @@ Prompts are built by `PromptService`, which loads `review.md` / `explain.md` fro
 - `ICopilotService` / `CopilotService` — calls GitHub Copilot chat completions API for diff review/explanation
 - `ICopilotAuthService` / `CopilotAuthService` — device-code OAuth for GitHub Copilot; stores credentials in SecureStorage; manages session token refresh
 - `ICopilotModelService` / `CopilotModelService` — fetches and filters Copilot chat models; hardcoded fallback list
+- `IOllamaService` / `OllamaService` — calls Ollama `/api/chat` for diff review/explanation; computes `num_ctx` dynamically
+- `IOllamaEndpointService` / `OllamaEndpointService` — manages configured Ollama endpoints; fetches models, handles pulls with streaming progress, persists state via `SettingsService`
 - `PromptService` — loads and renders prompt templates (embedded resources or user overrides)
 - `IAnalysisLinkService` / `AnalysisLinkService` — parses AI markdown for file references, maps them to diff positions, fires `FocusRequested` events
 - `AiCacheService` — persists AI responses keyed by diff + run config; no interface (injected directly)

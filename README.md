@@ -8,7 +8,7 @@ Built on **.NET MAUI + Blazor Hybrid** targeting `net10.0-windows10.0.19041.0`.
 
 - Compare any two branches (or pinned commits) in a local git repository
 - Syntax-highlighted unified diff with collapsible file sections
-- AI review and explanation via **Claude** (Claude Code CLI) or **GitHub Copilot**
+- AI review and explanation via **Claude** (Claude Code CLI), **GitHub Copilot**, or **Ollama** (self-hosted)
 - Analysis link navigation — AI references to `File.cs:42` are clickable and scroll the diff to that line
 - Severity-aware analysis indicators — findings are tagged critical/high/medium/low and displayed with matching intensity
 - Configurable diff context depth (3 / 10 / 25 / 50 lines per hunk) for richer AI context
@@ -22,6 +22,7 @@ Built on **.NET MAUI + Blazor Hybrid** targeting `net10.0-windows10.0.19041.0`.
 - `git` on PATH
 - For Claude: [Claude Code CLI](https://claude.ai/code) authenticated (`claude auth login`)
 - For GitHub Copilot: a GitHub account with Copilot access (sign-in handled in-app)
+- For Ollama: a running [Ollama](https://ollama.com) instance (default `http://localhost:11434`); configure endpoints in Settings
 
 ## Build & Run
 
@@ -49,7 +50,7 @@ DiffThis.UI/                    Razor components, pages, panels
 DiffThis.Core/                  Domain models (DiffResult, DiffFile, DiffHunk, DiffLine)
 DiffThis.AI.Shared/             PromptService, AiCacheService, AnalysisLinkService, DiffSessionService
 DiffThis.AI.Claude/             Claude CLI integration
-DiffThis.AI.OpenAI/             GitHub Copilot integration (OpenAI-compatible API)
+DiffThis.AI.OpenAI/             GitHub Copilot + Ollama integration (OpenAI-compatible API)
 DiffThis.AI.OpenAI.Tests/       Integration tests for Copilot services
 ```
 
@@ -84,6 +85,10 @@ Uses the `claude` CLI as a subprocess (diff passed on stdin). Requires [Claude C
 ### GitHub Copilot
 
 Calls the GitHub Copilot chat completions API directly. Sign in with your GitHub account from the Settings page — DiffThis handles the device-code OAuth flow and session token refresh automatically. Requires a GitHub account with Copilot access.
+
+### Ollama
+
+Calls a local (or remote) Ollama instance via its `/api/chat` endpoint. Add one or more endpoints in Settings (name, base URL, optional API key, optional per-endpoint timeout). DiffThis fetches available models from each endpoint and lets you pull new models directly from the UI. The context window (`num_ctx`) is sized automatically based on the prompt length to avoid truncation.
 
 ## AI Prompts
 
