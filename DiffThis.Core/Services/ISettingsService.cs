@@ -26,6 +26,9 @@ public interface ISettingsService
     // ── MainView layout ────────────────────────────────────────────────────
     bool MainViewSideBySide { get; set; }  // default: false (tabbed)
 
+    // ── GitHub Copilot ─────────────────────────────────────────────────────
+    int? CopilotTimeoutSeconds { get; set; }  // null = no timeout (default: 300)
+
     // ── Ollama endpoints ───────────────────────────────────────────────────
     string OllamaEndpointsJson { get; set; }  // JSON-serialised List<PersistedEndpoint>
 

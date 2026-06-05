@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using DiffThis.AI.Shared.Services;
 using DiffThis.Core.Models;
+using DiffThis.Core.Services;
 
 namespace DiffThis.AI.OpenAI.Services;
 
@@ -13,12 +14,14 @@ public class CopilotService : ICopilotService
 
     private readonly ICopilotAuthService _auth;
     private readonly PromptService       _prompts;
-    private readonly HttpClient          _http = new();
+    private readonly ISettingsService    _settings;
+    private readonly HttpClient          _http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
-    public CopilotService(ICopilotAuthService auth, PromptService prompts)
+    public CopilotService(ICopilotAuthService auth, PromptService prompts, ISettingsService settings)
     {
-        _auth    = auth;
-        _prompts = prompts;
+        _auth     = auth;
+        _prompts  = prompts;
+        _settings = settings;
     }
 
     public Task<string> ReviewDiffAsync(DiffResult diff, string modelId, CancellationToken ct = default)
@@ -55,10 +58,21 @@ public class CopilotService : ICopilotService
         req.Headers.Add("User-Agent",             "DiffThis/1.0");
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
+        using var cts = _settings.CopilotTimeoutSeconds is { } secs
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        cts?.CancelAfter(TimeSpan.FromSeconds(_settings.CopilotTimeoutSeconds!.Value));
+        var token2 = cts?.Token ?? ct;
+
         HttpResponseMessage resp;
         try
         {
-            resp = await _http.SendAsync(req, ct);
+            resp = await _http.SendAsync(req, token2);
+        }
+        catch (OperationCanceledException) when (cts is not null && cts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"GitHub Copilot request timed out after {_settings.CopilotTimeoutSeconds}s. Increase the timeout in Settings or set it to unlimited.");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

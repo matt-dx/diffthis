@@ -16,6 +16,7 @@ public class SettingsService : ISettingsService
     private const string PreferredReviewModelKey  = "preferred_review_model";
     private const string DiffContextLinesKey      = "diff_context_lines";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
+    private const string CopilotTimeoutKey        = "copilot_timeout_seconds";
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string WindowXKey             = "window_x";
@@ -129,6 +130,16 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(MainViewSideBySideKey, false);
         set => Preferences.Set(MainViewSideBySideKey, value);
+    }
+
+    public int? CopilotTimeoutSeconds
+    {
+        get
+        {
+            var v = Preferences.Get(CopilotTimeoutKey, 300);
+            return v <= 0 ? null : v;
+        }
+        set => Preferences.Set(CopilotTimeoutKey, value is { } secs && secs > 0 ? secs : 0);
     }
 
     public string OllamaEndpointsJson

@@ -263,6 +263,15 @@
                     }
                 </div>
             }
+            <div class="setting-row" style="margin-top:8px">
+                <label class="setting-label">Request timeout</label>
+                <input type="number" class="setting-input setting-input-sm" min="10" style="width:80px"
+                       value="@(Svc.CopilotTimeoutSeconds?.ToString() ?? "")"
+                       placeholder="300"
+                       title="Request timeout in seconds. Leave blank for no timeout."
+                       @onchange="e => UpdateCopilotTimeout(e.Value?.ToString())" />
+                <span class="setting-desc" style="margin:0">s timeout (blank = none)</span>
+            </div>
         </div>
     </section>
 
@@ -738,6 +747,12 @@
         if (ep is null) return;
         var timeout = int.TryParse(value, out var secs) && secs > 0 ? secs : (int?)null;
         OllamaEndpoints.UpdateEndpoint(ep with { TimeoutSeconds = timeout });
+    }
+
+    private void UpdateCopilotTimeout(string? value)
+    {
+        var timeout = int.TryParse(value, out var secs) && secs > 0 ? secs : (int?)null;
+        Svc.CopilotTimeoutSeconds = timeout;
     }
 
     private async Task RefreshModels()        => await ModelService.RefreshAsync();
