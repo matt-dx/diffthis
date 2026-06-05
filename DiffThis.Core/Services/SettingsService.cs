@@ -160,4 +160,13 @@ public class SettingsService : ISettingsService
         dict[repoPath] = state;
         Preferences.Set(BranchStatesKey, JsonSerializer.Serialize(dict));
     }
+
+    public void RemoveBranchState(string repoPath)
+    {
+        var json = Preferences.Get(BranchStatesKey, "{}");
+        var dict = JsonSerializer.Deserialize<Dictionary<string, BranchSelectionState>>(json);
+        if (dict is null || !dict.ContainsKey(repoPath)) return;
+        dict.Remove(repoPath);
+        Preferences.Set(BranchStatesKey, JsonSerializer.Serialize(dict));
+    }
 }

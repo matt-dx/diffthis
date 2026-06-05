@@ -12,6 +12,7 @@ public interface ISettingsService
     void RemoveRecentRepository(string path);
     BranchSelectionState? GetBranchState(string repoPath);
     void SaveBranchState(string repoPath, BranchSelectionState state);
+    void RemoveBranchState(string repoPath);
 
     // ── Claude AI defaults ─────────────────────────────────────────────────
     bool    AiToolsEnabled        { get; set; }  // default: false

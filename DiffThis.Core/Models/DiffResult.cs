@@ -14,6 +14,7 @@ public class DiffResult
 
     public string BaseDisplay    => BaseLabel.Length    > 0 ? BaseLabel    : BaseBranch;
     public string CompareDisplay => CompareLabel.Length > 0 ? CompareLabel : CompareBranch;
+    public int ContextLines { get; set; } = 3;
     public List<DiffFile> Files { get; set; } = [];
 
     public int TotalAdditions => Files.Sum(f => f.Additions);

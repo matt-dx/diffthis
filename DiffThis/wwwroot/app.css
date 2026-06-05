@@ -394,6 +394,11 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 /* ── Diff file blocks ────────────────────────────────────────────────── */
 .diff-file             { border: 1px solid var(--border); border-radius: var(--radius); margin: 16px; overflow: hidden; }
 .diff-file-hidden      { display: none; }
+.diff-file-added    { border-left: 3px solid #2ea043; }
+.diff-file-deleted  { border-left: 3px solid #da3633; }
+.diff-file-modified { border-left: 3px solid #1f6feb; }
+.diff-file-renamed  { border-left: 3px solid #9a6700; }
+.diff-file-copied   { border-left: 3px solid #6f42c1; }
 .file-header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; background: var(--bg-secondary);

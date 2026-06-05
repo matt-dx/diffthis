@@ -71,7 +71,7 @@
             @foreach (var (file, fi) in Diff.Files.Select((f, i) => (f, i)))
             {
                 var fileRefs = Settings.AnalysisLinksEnabled ? LinkService.GetFileRefs(fi) : (IReadOnlyList<AnalysisRef>)[];
-                <div class="diff-file @(Session.HiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
+                <div class="diff-file @StatusAccentCss(file.Status) @(Session.HiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
                     <div class="file-header">
                         <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
                         <span class="file-path">
@@ -322,35 +322,49 @@
     private async Task RehydrateContextOverridesAsync()
     {
         if (Diff is null) return;
-        foreach (var (fi, savedCtx) in _fileContextLines)
+        // Snapshot to avoid mutating the dict we're iterating if ChangeContext fires mid-loop.
+        var snapshot = _fileContextLines.ToList();
+        foreach (var (fi, savedCtx) in snapshot)
         {
             if (fi >= Diff.Files.Count) continue;
             var file = Diff.Files[fi];
             if (file.IsBinary || file.Hunks.Count == 0) continue;
             if (file.Status is DiffFileStatus.Added or DiffFileStatus.Deleted) continue;
 
+            _contextLoading.Add(fi);
+            await InvokeAsync(StateHasChanged);
             try
             {
                 var filePath = string.IsNullOrEmpty(file.NewPath) ? file.OldPath : file.NewPath;
                 var gitContext = savedCtx == int.MaxValue ? 100_000 : savedCtx;
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 var hunks = await GitService.GetFileHunksAsync(
-                    Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext);
-                _hunkOverrides[fi] = hunks;
+                    Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext, cts.Token);
 
-                var lang = SyntaxHighlighter.GetLanguage(file.FileName);
-                if (lang is not null && hunks.Count > 0)
+                // Only apply if the user hasn't manually changed context for this file since we started.
+                if (_fileContextLines.TryGetValue(fi, out var current) && current == savedCtx)
                 {
-                    var contents = hunks.SelectMany(h => h.Lines.Select(l => l.Content)).ToArray();
-                    _highlighted[fi] = SyntaxHighlighter.HighlightLines(contents, lang);
+                    _hunkOverrides[fi] = hunks;
+
+                    var lang = SyntaxHighlighter.GetLanguage(file.FileName);
+                    if (lang is not null && hunks.Count > 0)
+                    {
+                        var contents = hunks.SelectMany(h => h.Lines.Select(l => l.Content)).ToArray();
+                        _highlighted[fi] = SyntaxHighlighter.HighlightLines(contents, lang);
+                    }
                 }
             }
             catch { /* leave default hunks */ }
+            finally
+            {
+                _contextLoading.Remove(fi);
+                await InvokeAsync(StateHasChanged);
+            }
         }
-        await InvokeAsync(StateHasChanged);
     }
 
     private int GetFileContext(int fi) =>
-        _fileContextLines.TryGetValue(fi, out var v) ? v : Settings.DiffContextLines;
+        _fileContextLines.TryGetValue(fi, out var v) ? v : (Diff?.ContextLines ?? Settings.DiffContextLines);
 
     private async Task ChangeContext(int fi, int direction)
     {
@@ -373,8 +387,9 @@
             var file = Diff.Files[fi];
             var filePath = string.IsNullOrEmpty(file.NewPath) ? file.OldPath : file.NewPath;
             var gitContext = next == int.MaxValue ? 100_000 : next;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var hunks = await GitService.GetFileHunksAsync(
-                Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext);
+                Diff.RepositoryPath, Diff.BaseBranch, Diff.CompareBranch, filePath, gitContext, cts.Token);
             _hunkOverrides[fi] = hunks;
 
             // Re-highlight the file with updated hunks
@@ -391,7 +406,7 @@
         finally
         {
             _contextLoading.Remove(fi);
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -476,6 +491,15 @@
         DiffLineType.Addition => "+",
         DiffLineType.Deletion => "-",
         _                     => " "
+    };
+
+    private static string StatusAccentCss(DiffFileStatus s) => s switch
+    {
+        DiffFileStatus.Added    => "diff-file-added",
+        DiffFileStatus.Deleted  => "diff-file-deleted",
+        DiffFileStatus.Renamed  => "diff-file-renamed",
+        DiffFileStatus.Copied   => "diff-file-copied",
+        _                       => "diff-file-modified",
     };
 
     private static string StatusCss(DiffFileStatus s) => s switch

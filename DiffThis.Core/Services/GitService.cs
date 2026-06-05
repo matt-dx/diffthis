@@ -1,12 +1,42 @@
+using System.Diagnostics;
 using System.Text;
-using CliWrap;
-using CliWrap.Buffered;
 using DiffThis.Core.Models;
 
 namespace DiffThis.Core.Services;
 
 public class GitService : IGitService
 {
+    private sealed record GitResult(int ExitCode, string StandardOutput, string StandardError);
+
+    // CreateNoWindow = true prevents Windows from opening a console window when git.exe
+    // (a console subsystem binary) is spawned from a GUI process such as MAUI. Without
+    // it, git — and the internal helper processes it spawns (e.g. git config --null --list)
+    // — allocate a new console window and emit broken-pipe errors on the inherited handles.
+    private static async Task<GitResult> RunGitAsync(
+        string workingDir, IEnumerable<string> args, CancellationToken ct = default)
+    {
+        var psi = new ProcessStartInfo("git")
+        {
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            WorkingDirectory       = workingDir,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding  = Encoding.UTF8,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        using var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        proc.Start();
+
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = proc.StandardError.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        return new GitResult(proc.ExitCode, await stdoutTask, await stderrTask);
+    }
+
     public bool IsGitRepository(string path) =>
         Directory.Exists(path) &&
         (Directory.Exists(Path.Combine(path, ".git")) || File.Exists(Path.Combine(path, ".git")));
@@ -14,11 +44,8 @@ public class GitService : IGitService
     public async Task<List<CommitInfo>> GetCommitsAsync(string repositoryPath, string branch, int maxCount = 50, CancellationToken ct = default)
     {
         const char sep = '\x1f';
-        var result = await Cli.Wrap("git")
-            .WithArguments(["log", branch, $"--format=%H{sep}%h{sep}%s{sep}%an{sep}%ar", $"--max-count={maxCount}"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var result = await RunGitAsync(repositoryPath,
+            ["log", branch, $"--format=%H{sep}%h{sep}%s{sep}%an{sep}%ar", $"--max-count={maxCount}"], ct);
 
         if (result.ExitCode != 0) return [];
 
@@ -43,11 +70,8 @@ public class GitService : IGitService
 
     public async Task<List<string>> GetBranchesAsync(string repositoryPath, CancellationToken ct = default)
     {
-        var result = await Cli.Wrap("git")
-            .WithArguments(["branch", "-a", "--format=%(refname:short)"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(ct);
+        var result = await RunGitAsync(repositoryPath,
+            ["branch", "-a", "--format=%(refname:short)"], ct);
 
         if (result.ExitCode != 0) return [];
 
@@ -63,11 +87,7 @@ public class GitService : IGitService
 
     public async Task<bool> FetchAsync(string repositoryPath, CancellationToken ct = default)
     {
-        var result = await Cli.Wrap("git")
-            .WithArguments(["fetch", "--prune"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteAsync(ct);
+        var result = await RunGitAsync(repositoryPath, ["fetch", "--prune"], ct);
         return result.ExitCode == 0;
     }
 
@@ -76,35 +96,22 @@ public class GitService : IGitService
         contextLines = Math.Clamp(contextLines, 0, 200); // >200 lines of context produces diffs that blow past the AI prompt size limit
         var repoName = Path.GetFileName(repositoryPath.TrimEnd('/', '\\'));
 
-        var remoteResult = await Cli.Wrap("git")
-            .WithArguments(["remote", "get-url", "origin"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var remoteResult = await RunGitAsync(repositoryPath, ["remote", "get-url", "origin"], ct);
         var remoteUri = remoteResult.ExitCode == 0 ? StripCredentials(remoteResult.StandardOutput.Trim()) : string.Empty;
 
-        var statResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--numstat", $"{baseBranch}..{compareBranch}"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var statResult = await RunGitAsync(repositoryPath,
+            ["diff", "--numstat", $"{baseBranch}..{compareBranch}"], ct);
 
         if (statResult.ExitCode != 0)
             throw new InvalidOperationException(
                 statResult.StandardError.Trim() is { Length: > 0 } err ? err
                 : $"git diff --numstat exited with code {statResult.ExitCode}");
 
-        var nameStatusResult = await Cli.Wrap("git")
-            .WithArguments(["diff", "--name-status", $"{baseBranch}..{compareBranch}"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var nameStatusResult = await RunGitAsync(repositoryPath,
+            ["diff", "--name-status", $"{baseBranch}..{compareBranch}"], ct);
 
-        var diffResult = await Cli.Wrap("git")
-            .WithArguments(["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}"])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var diffResult = await RunGitAsync(repositoryPath,
+            ["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}"], ct);
 
         var statMap = ParseNumstat(statResult.StandardOutput);
         var statusMap = ParseNameStatus(nameStatusResult.StandardOutput);
@@ -117,6 +124,7 @@ public class GitService : IGitService
             RemoteUri = remoteUri,
             BaseBranch = baseBranch,
             CompareBranch = compareBranch,
+            ContextLines = contextLines,
             Files = files
         };
     }
@@ -124,11 +132,8 @@ public class GitService : IGitService
     public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)
     {
         contextLines = Math.Clamp(contextLines, 0, 100_000);
-        var result = await Cli.Wrap("git")
-            .WithArguments(["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}", "--", filePath])
-            .WithWorkingDirectory(repositoryPath)
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteBufferedAsync(Encoding.UTF8, Encoding.UTF8, ct);
+        var result = await RunGitAsync(repositoryPath,
+            ["diff", $"--unified={contextLines}", $"{baseBranch}..{compareBranch}", "--", filePath], ct);
 
         if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.StandardOutput)) return [];
         var files = await Task.Run(() => ParseUnifiedDiff(result.StandardOutput, [], []), ct);

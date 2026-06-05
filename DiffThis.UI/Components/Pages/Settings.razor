@@ -457,8 +457,8 @@
         <div class="setting-card">
             <div class="setting-row">
                 <div>
-                    <p class="setting-label">Recent repositories to show</p>
-                    <p class="setting-desc">Maximum shown on the home screen</p>
+                    <p class="setting-label">Recent history</p>
+                    <p class="setting-desc">Recently viewed repositories are shown on the home screen</p>
                 </div>
                 <select class="select-sm" @bind="maxRecent" @bind:after="SaveMaxRecent">
                     @foreach (var n in new[] { 5, 10, 15, 20, 25, 50 })
@@ -466,28 +466,59 @@
                         <option value="@n">@n</option>
                     }
                 </select>
-            </div>
-        </div>
-        <div class="setting-card">
-            <div class="setting-row">
-                <div>
-                    <p class="setting-label">Clear history</p>
-                    <p class="setting-desc">Remove all recent repository entries from the home screen</p>
-                </div>
-                <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Clear</button>
+                <button class="btn btn-sm btn-danger" disabled="@(!Svc.RecentRepositoryPaths.Any())"
+                        @onclick="() => _showClearRepoHistoryConfirm = true">Clear</button>
             </div>
         </div>
         <div class="setting-card">
             <div class="setting-row">
                 <div>
                     <p class="setting-label">Cached results</p>
-                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored (Claude and GitHub Models).")</p>
+                    <p class="setting-desc">@(AiCache.Count == 0 ? "No cached results." : $"{AiCache.Count} cached result{(AiCache.Count == 1 ? "" : "s")} stored.")</p>
                 </div>
                 <button class="btn btn-sm btn-danger" disabled="@(AiCache.Count == 0)"
                         @onclick="() => _showClearCacheConfirm = true">Clear</button>
             </div>
         </div>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Diff state</p>
+                    <p class="setting-desc">@(AiCache.VisibilityCount == 0 ? "No stored diff state." : $"Stored for {AiCache.VisibilityCount} diff{(AiCache.VisibilityCount == 1 ? "" : "s")}: hidden files, context line overrides, and hidden analysis cards.")</p>
+                </div>
+                <button class="btn btn-sm btn-danger" disabled="@(AiCache.VisibilityCount == 0)"
+                        @onclick="() => _showClearVisibilityConfirm = true">Clear</button>
+            </div>
+        </div>
     </section>
+
+    @if (_showClearRepoHistoryConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearRepoHistoryConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear recent history?</p>
+                <p class="modal-body">All @Svc.RecentRepositoryPaths.Count recent repositor@(Svc.RecentRepositoryPaths.Count == 1 ? "y" : "ies") will be removed, along with their saved branch selections. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearRepoHistoryConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearRepoHistory">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_showClearVisibilityConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearVisibilityConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear diff state?</p>
+                <p class="modal-body">Stored state for @AiCache.VisibilityCount diff@(AiCache.VisibilityCount == 1 ? "" : "s") will be deleted — hidden files, context line overrides, and hidden analysis cards. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearVisibilityConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearDiffState">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_showClearCacheConfirm)
     {
@@ -583,7 +614,9 @@
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
+    private bool           _showClearRepoHistoryConfirm;
     private bool           _showClearCacheConfirm;
+    private bool           _showClearVisibilityConfirm;
     private bool           _modelsExpanded;
     private bool           _copilotModelsExpanded;
     private bool           _copilotSigningIn;
@@ -730,14 +763,23 @@
     private void ClearRepoHistory()
     {
         foreach (var path in Svc.RecentRepositoryPaths.ToList())
+        {
+            Svc.RemoveBranchState(path);
             Svc.RemoveRecentRepository(path);
-        StateHasChanged();
+        }
+        _showClearRepoHistoryConfirm = false;
     }
 
     private void ClearAiCache()
     {
         AiCache.Clear();
         _showClearCacheConfirm = false;
+    }
+
+    private void ClearDiffState()
+    {
+        AiCache.ClearVisibility();
+        _showClearVisibilityConfirm = false;
     }
 
     private void ReloadAuth()

@@ -219,6 +219,14 @@ public class AiCacheService
         Save();
     }
 
+    public int VisibilityCount => _visibility.Count;
+
+    public void ClearVisibility()
+    {
+        _visibility.Clear();
+        SaveVisibility();
+    }
+
     public void Remove(string repoPath, string baseRef, string compareRef, AiRunKey runKey)
     {
         if (_cache.TryRemove(CacheKey(repoPath, baseRef, compareRef, runKey), out _))
