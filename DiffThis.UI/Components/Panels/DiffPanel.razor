@@ -74,6 +74,11 @@
                 <div class="diff-file @StatusAccentCss(file.Status) @(Session.HiddenFiles.Contains(fi) ? "diff-file-hidden" : "")" id="file-@fi">
                     <div class="file-header">
                         <span class="status-badge @StatusCss(file.Status)">@StatusLabel(file.Status)</span>
+                        @{ var langBadge = LanguageBadge(file.FileName); }
+                        @if (langBadge is not null)
+                        {
+                            <span class="icon lang-badge @langBadge" title="@langBadge[3..]"></span>
+                        }
                         <span class="file-path">
                             <span class="dir">@file.FileDirectory</span><strong>@file.FileName</strong>
                         </span>
@@ -519,4 +524,38 @@
         DiffFileStatus.Copied   => "C",
         _                       => "M"
     };
+
+    private static string? LanguageBadge(string fileName) =>
+        Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant() switch
+        {
+            "cs"                                                => "di-csharp",
+            "ts" or "tsx"                                       => "di-typescript",
+            "js" or "jsx" or "mjs" or "cjs"                     => "di-javascript",
+            "py" or "pyw"                                       => "di-python",
+            "go"                                                => "di-go",
+            "rs"                                                => "di-rust",
+            "sh" or "bash" or "zsh"                             => "di-bash",
+            "ps1" or "psm1" or "psd1"                           => "di-powershell",
+            "dockerfile"                                        => "di-docker",
+            "kt" or "kts"                                       => "di-kotlin",
+            "java"                                              => "di-java",
+            "php"                                               => "di-php",
+            "rb"                                                => "di-ruby",
+            "swift"                                             => "di-swift",
+            "dart"                                              => "di-dart",
+            "lua"                                               => "di-lua",
+            "scala" or "sc"                                     => "di-scala",
+            "groovy"                                            => "di-groovy",
+            "clj" or "cljs" or "cljc"                           => "di-clojure",
+            "hs" or "lhs"                                       => "di-haskell",
+            "zig"                                               => "di-zig",
+            "ml" or "mli"                                       => "di-ocaml",
+            "ex" or "exs"                                       => "di-elixir",
+            "jl"                                                => "di-julia",
+            "fs" or "fsi" or "fsx"                              => "di-fsharp",
+            "vue"                                               => "di-vuejs",
+            "svelte"                                            => "di-svelte",
+            "r" or "rmd"                                        => "di-r",
+            _                                                   => null
+        };
 }

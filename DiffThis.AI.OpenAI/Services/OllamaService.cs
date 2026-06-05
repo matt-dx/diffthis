@@ -45,14 +45,15 @@ public class OllamaService : IOllamaService
         if (cts is not null) cts.CancelAfter(TimeSpan.FromSeconds(endpoint.TimeoutSeconds!.Value));
         var effectiveCt = cts?.Token ?? ct;
 
-        // Estimate token count (~3.5 chars/token for code), add 2048 for response headroom,
+        // Estimate token count (~2.5 chars/token for code-heavy diffs), add 4096 for response headroom,
         // round up to nearest 1024, clamp to [4096, ceiling of PromptService.MaxDiffChars in tokens + buffer].
-        const int    ResponseBuffer   = 2048;
+        // 3.5 chars/token underestimates code by ~25-30%; 2.5 is more conservative and avoids truncation.
+        const int    ResponseBuffer   = 4096;
         const int    BlockSize        = 1024;
         const int    MinCtx           = 4096;
-        const double CharsPerToken    = 3.5;
+        const double CharsPerToken    = 2.5;
         // Max tokens needed = ceil(MaxDiffChars / CharsPerToken) + ResponseBuffer, rounded up to BlockSize.
-        // Using integer arithmetic: ceil(60000 / 3.5) = 17143, + 2048 = 19191, round to 20480.
+        // Using integer arithmetic: ceil(60000 / 2.5) = 24000, + 4096 = 28096, round to 29696.
         const int MaxDiffTokens = (int)(PromptService.MaxDiffChars / CharsPerToken) + 1;
         const int MaxCtx        = ((MaxDiffTokens + ResponseBuffer + BlockSize - 1) / BlockSize) * BlockSize;
         var estimatedPromptTokens = (int)Math.Ceiling((system.Length + user.Length) / CharsPerToken);
