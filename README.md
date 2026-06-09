@@ -24,6 +24,54 @@ Built on **.NET MAUI + Blazor Hybrid** targeting `net10.0-windows10.0.19041.0`.
 - For GitHub Copilot: a GitHub account with Copilot access (sign-in handled in-app)
 - For Ollama: a running [Ollama](https://ollama.com) instance (default `http://localhost:11434`); configure endpoints in Settings
 
+## Installation
+
+### Microsoft Store
+
+Search for **DiffThis** in the Microsoft Store, or install directly:
+
+[![Get it from Microsoft](https://get.microsoft.com/images/en-us%20dark.svg)](https://www.microsoft.com/store/apps/9MTZD5QS19QM)
+
+## Quick Start
+
+### 1. Open a repository
+
+Click **Open Repository** and select any local git repo folder. Recently opened repos appear on the home screen for quick access.
+
+![Home screen](.store-assets/screenshot-home.png)
+
+### 2. Select branches to compare
+
+Pick a **Base** and **Compare** branch from the dropdowns. Optionally check **Specific Commit** on either side to pin the diff to a particular commit. Click **Compare →**.
+
+![Branch selection](.store-assets/screenshot-branch-selection.png)
+
+### 3. Browse the diff
+
+The **Diff** tab shows a file sidebar with add/remove counts and a syntax-highlighted unified diff. Click any file in the sidebar to jump to it. Use the context-lines control (top right) to show more surrounding code.
+
+![Diff panel](.store-assets/screenshot-diff-panel.png)
+
+### 4. Run AI analysis
+
+Switch to the **Analysis** tab. Select a model from the **Context** or **Code Review** dropdowns and click **+** to generate a result. Results are cached — re-opening the same diff is instant.
+
+![Analysis panel](.store-assets/screenshot-analysis-panel-context.png)
+
+AI findings that reference specific files (e.g. `Services/GitService.cs:42`) are rendered as clickable links that scroll the diff to that exact line.
+
+![Analysis with review results](.store-assets/screenshot-analysis-panel-review.png)
+
+### 5. Connect an AI provider
+
+Open **Settings** (gear icon, top right) to sign in to Claude or GitHub Copilot, or add an Ollama endpoint. Once connected, available models are fetched automatically.
+
+![Settings](.store-assets/screenshot-settings.png)
+
+- **Claude** — requires [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude auth login` in a terminal)
+- **GitHub Copilot** — sign in with your GitHub account directly from the Settings page
+- **Ollama** — add a base URL (e.g. `http://localhost:11434`) for any running Ollama instance
+
 ## Build & Run
 
 ```bash
@@ -97,7 +145,7 @@ Custom prompt templates can be placed at `%LOCALAPPDATA%\DiffThis\prompts\review
 Available placeholders:
 
 | Placeholder | Value |
-|---|---|
+| --- | --- |
 | `{{RepositoryName}}` | Repo folder name |
 | `{{BaseDisplay}}` | Human-readable base ref label |
 | `{{CompareDisplay}}` | Human-readable compare ref label |
