@@ -55,3 +55,12 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# MSIX / MAUI packaging output
+AppPackages/
+BundleArtifacts/
+publish/
+*.msix
+*.msixbundle
+*.msixupload
+secrets.txt

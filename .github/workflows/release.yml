@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'CLAUDE.md'
+      - 'ATTRIBUTIONS.md'
+      - 'todo.md'
+      - '.gitignore'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
+      - name: Set version in csproj
+        run: |
+          $version = "1.${{ github.run_number }}.0"
+          $csproj  = "DiffThis/DiffThis.csproj"
+          $xml     = [xml](Get-Content $csproj)
+          $xml.SelectSingleNode("//ApplicationDisplayVersion").InnerText = $version
+          $xml.Save((Resolve-Path $csproj))
+
+      - name: Publish Windows (self-contained exe)
+        run: >
+          dotnet publish DiffThis/DiffThis.csproj
+          -f net10.0-windows10.0.19041.0
+          -c Release
+          -p:WindowsPackageType=None
+          -p:SelfContained=true
+          -p:PublishSingleFile=true
+          -o publish/windows
+
+      - name: Zip Windows output
+        run: Compress-Archive -Path publish/windows/* -DestinationPath publish/DiffThis-windows-x64.zip
+
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          tag="v1.${{ github.run_number }}.0"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" publish/DiffThis-windows-x64.zip --clobber
+            gh release edit "$tag" --title "Release $tag" --generate-notes
+          else
+            gh release create "$tag" \
+              publish/DiffThis-windows-x64.zip \
+              --title "Release $tag" \
+              --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+
+      - name: Submit winget manifest
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $id      = "MattWhitwam.DiffThis"
+          $version = "1.${{ github.run_number }}.0"
+          $branch  = "add-$id-$version"
+          $zipUrl  = "https://github.com/matt-dx/diffthis/releases/download/v$version/DiffThis-windows-x64.zip"
+          $sha256  = (Get-FileHash publish/DiffThis-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+
+          gh repo fork microsoft/winget-pkgs --clone=false
+          $ghUser   = gh api user --jq '.login'
+          $ghUserId = gh api user --jq '.id'
+          gh repo clone "$ghUser/winget-pkgs" winget-pkgs-repo -- --depth=1
+          Set-Location winget-pkgs-repo
+          gh auth setup-git
+
+          git config user.email "$ghUserId+$ghUser@users.noreply.github.com"
+          git config user.name "$ghUser"
+          git checkout -B $branch
+
+          $pkgDir = "manifests/m/MattWhitwam/DiffThis/$version"
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+
+          (@(
+            "# yaml-language-server: `$schema=https://aka.ms/winget-manifest.version.1.9.0.schema.json",
+            "PackageIdentifier: $id",
+            "PackageVersion: $version",
+            "DefaultLocale: en-US",
+            "ManifestType: version",
+            "ManifestVersion: 1.9.0"
+          ) -join "`n") | Set-Content "$pkgDir/$id.yaml" -Encoding UTF8
+
+          (@(
+            "# yaml-language-server: `$schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json",
+            "PackageIdentifier: $id",
+            "PackageVersion: $version",
+            "Installers:",
+            "- Architecture: x64",
+            "  InstallerType: zip",
+            "  InstallerUrl: $zipUrl",
+            "  InstallerSha256: $sha256",
+            "  NestedInstallerType: portable",
+            "  NestedInstallerFiles:",
+            "  - RelativeFilePath: DiffThis.exe",
+            "Dependencies:",
+            "  PackageDependencies:",
+            "  - PackageIdentifier: Microsoft.EdgeWebView2Runtime",
+            "ManifestType: installer",
+            "ManifestVersion: 1.9.0"
+          ) -join "`n") | Set-Content "$pkgDir/$id.installer.yaml" -Encoding UTF8
+
+          (@(
+            "# yaml-language-server: `$schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json",
+            "PackageIdentifier: $id",
+            "PackageVersion: $version",
+            "PackageLocale: en-US",
+            "Publisher: Matt Whitwam",
+            "PublisherUrl: https://github.com/matt-dx/diffthis",
+            "PackageName: DiffThis",
+            "License: The Unlicense",
+            "ShortDescription: A Windows desktop diff tool for comparing git branches, with AI-powered code review and explanation.",
+            "Tags:",
+            "- git",
+            "- diff",
+            "- developer-tools",
+            "ManifestType: defaultLocale",
+            "ManifestVersion: 1.9.0"
+          ) -join "`n") | Set-Content "$pkgDir/$id.locale.en-US.yaml" -Encoding UTF8
+
+          git add -- $pkgDir
+          git commit -m "Add $id $version"
+          git push origin $branch --force-with-lease
+
+          $existingPr = gh pr list --repo microsoft/winget-pkgs --head "${ghUser}:${branch}" --json url --jq '.[0].url'
+          if ($existingPr) {
+            Write-Host "PR already exists: $existingPr"
+          } else {
+            gh pr create `
+              --repo microsoft/winget-pkgs `
+              --title "Update: $id version $version" `
+              --body "Add $id version $version." `
+              --head "${ghUser}:${branch}"
+          }
