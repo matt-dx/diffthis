@@ -25,8 +25,11 @@
     <ApplicationId>MattWhitwam.DiffThis</ApplicationId>
     <ApplicationPublisher>CN=285A97EB-1786-4EB8-87B3-CBF3A5260DF7</ApplicationPublisher>
 
-    <!-- Versions. ApplicationDisplayVersion is overwritten by the release pipeline. -->
-    <ApplicationVersion>1</ApplicationVersion>
+    <!-- Versions. ApplicationDisplayVersion is overwritten by the release
+         pipeline. ApplicationVersion must stay 0 on Windows: it becomes the
+         4th (revision) component of the MSIX package version, and the Store
+         rejects any package whose revision is non-zero. -->
+    <ApplicationVersion>0</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
 
     <Platforms>Windows</Platforms>
