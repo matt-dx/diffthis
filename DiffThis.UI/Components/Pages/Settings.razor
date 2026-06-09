@@ -797,9 +797,9 @@
         _showClearVisibilityConfirm = false;
     }
 
-    private void ReloadAuth()
+    private async Task ReloadAuth()
     {
-        ClaudeAuth.Reload();
+        await ClaudeAuth.RefreshAsync();
         StateHasChanged();
     }
 

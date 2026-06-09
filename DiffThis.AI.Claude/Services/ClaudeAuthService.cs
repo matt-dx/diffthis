@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using DiffThis.Core.Models;
 using DiffThis.AI.Claude.Models;
@@ -10,6 +12,12 @@ public class ClaudeAuthService : IClaudeAuthService
     private static readonly string CredentialsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".claude", ".credentials.json");
+
+    // The public OAuth client ID registered for the Claude Code CLI application.
+    private const string OAuthClientId   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    private const string OAuthTokenUrl   = "https://platform.claude.com/v1/oauth/token";
+
+    private static readonly HttpClient _http = new();
 
     // Lazy so Preferences.Get is deferred until after MAUI's platform init
     private static readonly Lazy<string> _claudeExeLazy = new(ResolveExe);
@@ -83,6 +91,7 @@ public class ClaudeAuthService : IClaudeAuthService
     public string?         AccessToken      => _creds?.AccessToken;
     public string?         SubscriptionType => _creds?.SubscriptionType;
     public string?         Email            { get; private set; }
+    public bool            IsTokenExpired   => _creds?.IsExpired ?? true;
 
     public ClaudeAuthService() => Reload();
 
@@ -111,9 +120,6 @@ public class ClaudeAuthService : IClaudeAuthService
                 SubscriptionType = oauth.TryGetProperty("subscriptionType", out var st)
                                    ? st.GetString() ?? "" : "",
             };
-            // Note: credentials may have an expired access token. That's fine — we invoke
-            // the claude CLI as a subprocess for all AI calls, which handles OAuth refresh
-            // internally. We only need to know the credentials file exists.
             State = ClaudeAuthState.Authenticated;
 
             // Best-effort: read email from auth status asynchronously
@@ -122,13 +128,108 @@ public class ClaudeAuthService : IClaudeAuthService
         catch { State = ClaudeAuthState.NotFound; }
     }
 
-    // Note: RefreshAsync simply reloads from disk. Actual OAuth token refresh is handled
-    // transparently by the claude CLI subprocess. DiffThis does call the Anthropic API
-    // directly for model discovery (see ClaudeModelService), but not for completion requests.
-    public Task<bool> RefreshAsync()
+    /// <summary>
+    /// Refreshes the OAuth access token via Anthropic's token endpoint using the stored
+    /// refresh token, then reloads credentials from disk. Falls back to a disk-only reload
+    /// if the refresh request fails (e.g. rate-limited or network error).
+    /// </summary>
+    public async Task<bool> RefreshAsync()
     {
+        if (_creds is not null && !string.IsNullOrEmpty(_creds.RefreshToken))
+            await TryOAuthRefreshAsync(_creds.RefreshToken);
+
         Reload();
-        return Task.FromResult(State == ClaudeAuthState.Authenticated);
+        return State == ClaudeAuthState.Authenticated;
+    }
+
+    // POSTs to the Anthropic OAuth token endpoint with the refresh_token grant.
+    // On success, writes updated access_token + expiresAt back to .credentials.json.
+    private async Task TryOAuthRefreshAsync(string refreshToken)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            var body = new StringContent(
+                JsonSerializer.Serialize(new
+                {
+                    grant_type    = "refresh_token",
+                    refresh_token = refreshToken,
+                    client_id     = OAuthClientId,
+                }),
+                Encoding.UTF8,
+                "application/json");
+
+            var resp = await _http.PostAsync(OAuthTokenUrl, body, cts.Token);
+            if (!resp.IsSuccessStatusCode) return;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("access_token", out var atProp)) return;
+            var newToken = atProp.GetString();
+            if (string.IsNullOrEmpty(newToken)) return;
+
+            // expires_in is in seconds; expiresAt is Unix ms
+            var expiresIn = root.TryGetProperty("expires_in", out var expProp)
+                ? expProp.GetInt64() : 28800L;
+            var newExpiresAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiresIn * 1000;
+
+            var newRefreshToken = root.TryGetProperty("refresh_token", out var rtProp)
+                ? rtProp.GetString() : null;
+
+            await PatchCredentialsFileAsync(newToken, newExpiresAt, newRefreshToken);
+        }
+        catch { /* network error or JSON parse failure — fall through to Reload */ }
+    }
+
+    // Reads the credentials file, patches the OAuth fields, and writes it back atomically.
+    private static async Task PatchCredentialsFileAsync(
+        string newAccessToken, long newExpiresAt, string? newRefreshToken)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(CredentialsPath);
+            using var doc  = JsonDocument.Parse(json);
+            using var ms   = new MemoryStream();
+            using var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true });
+
+            writer.WriteStartObject();
+            foreach (var topProp in doc.RootElement.EnumerateObject())
+            {
+                if (topProp.Name != "claudeAiOauth")
+                { topProp.WriteTo(writer); continue; }
+
+                writer.WritePropertyName("claudeAiOauth");
+                writer.WriteStartObject();
+                foreach (var p in topProp.Value.EnumerateObject())
+                {
+                    switch (p.Name)
+                    {
+                        case "accessToken":
+                            writer.WriteString("accessToken", newAccessToken);
+                            break;
+                        case "expiresAt":
+                            writer.WriteNumber("expiresAt", newExpiresAt);
+                            break;
+                        case "refreshToken" when newRefreshToken is not null:
+                            writer.WriteString("refreshToken", newRefreshToken);
+                            break;
+                        default:
+                            p.WriteTo(writer);
+                            break;
+                    }
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+            await writer.FlushAsync();
+
+            // Write atomically via a temp file to avoid corrupting credentials on crash
+            var tmp = CredentialsPath + ".tmp";
+            await File.WriteAllBytesAsync(tmp, ms.ToArray());
+            File.Move(tmp, CredentialsPath, overwrite: true);
+        }
+        catch { /* best effort — leave existing credentials unchanged */ }
     }
 
     private async Task TryReadEmailAsync()
@@ -143,8 +244,6 @@ public class ClaudeAuthService : IClaudeAuthService
             psi.WorkingDirectory       = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             AppendArg(psi, "auth");
             AppendArg(psi, "status");
-            AppendArg(psi, "--output-format");
-            AppendArg(psi, "json");
 
             proc = Process.Start(psi);
             if (proc is null) return;
@@ -160,7 +259,6 @@ public class ClaudeAuthService : IClaudeAuthService
         catch { /* best effort — timeout, process error, or JSON parse failure */ }
         finally
         {
-            // Kill the process if it's still running after timeout
             try { if (proc is { HasExited: false }) proc.Kill(); } catch { }
             proc?.Dispose();
         }

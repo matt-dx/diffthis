@@ -8,10 +8,11 @@ public interface IClaudeAuthService
     string?         AccessToken      { get; }
     string?         SubscriptionType { get; }
     string?         Email            { get; }
+    bool            IsTokenExpired   { get; }
 
-    /// Re-reads the credentials file. Call after `claude auth login` or after a token refresh.
+    /// Re-reads the credentials file. Call after `claude auth login`.
     void Reload();
 
-    /// Reloads the credentials file from disk and returns true if the user is authenticated.
+    /// Refreshes the OAuth access token via the Anthropic token endpoint, then reloads from disk.
     Task<bool> RefreshAsync();
 }

@@ -49,11 +49,28 @@ public partial class ClaudeModelService : IClaudeModelService
 
         try
         {
+            // Proactively refresh the token if it's expired before hitting the API.
+            if (_auth.IsTokenExpired)
+                await _auth.RefreshAsync();
+
             using var req = new HttpRequestMessage(HttpMethod.Get, "/v1/models?limit=100");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _auth.AccessToken);
             req.Headers.Add("anthropic-version", "2023-06-01");
 
             var resp = await _http.SendAsync(req, ct);
+
+            // On auth failure, attempt one more refresh and retry (covers clock-skew and
+            // tokens that expired between the check above and the HTTP call).
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                await _auth.RefreshAsync();
+                resp.Dispose();
+                using var retry = new HttpRequestMessage(HttpMethod.Get, "/v1/models?limit=100");
+                retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _auth.AccessToken);
+                retry.Headers.Add("anthropic-version", "2023-06-01");
+                resp = await _http.SendAsync(retry, ct);
+            }
+
             if (!resp.IsSuccessStatusCode) return;
 
             using var doc = await JsonDocument.ParseAsync(
