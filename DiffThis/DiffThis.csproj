@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
-
   <!-- Run unpackaged in Debug so F5 works without deploying an MSIX.
        Release builds produce an MSIX package for the Microsoft Store
        (the self-contained-exe release pipeline overrides this with
@@ -7,7 +6,6 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <WindowsPackageType>None</WindowsPackageType>
   </PropertyGroup>
-
   <PropertyGroup>
     <TargetFrameworks>net10.0-windows10.0.19041.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
@@ -18,26 +16,21 @@
     <EnableDefaultCssItems>false</EnableDefaultCssItems>
     <Nullable>enable</Nullable>
     <ApplicationTitle>DiffThis</ApplicationTitle>
-
     <!-- App identity (Windows / MSIX Store). The Identity Name and Publisher
          here must match Platforms\Windows\Package.appxmanifest and the values
          reserved for the app in Partner Center. -->
     <ApplicationId>MattWhitwam.DiffThis</ApplicationId>
     <ApplicationPublisher>CN=285A97EB-1786-4EB8-87B3-CBF3A5260DF7</ApplicationPublisher>
-
     <!-- Versions. ApplicationDisplayVersion is overwritten by the release
          pipeline. ApplicationVersion must stay 0 on Windows: it becomes the
          4th (revision) component of the MSIX package version, and the Store
          rejects any package whose revision is non-zero. -->
     <ApplicationVersion>0</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
-
+    <ApplicationDisplayVersion>1.3.0</ApplicationDisplayVersion>
     <Platforms>Windows</Platforms>
-
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
   </PropertyGroup>
-
   <!-- MSIX Store packaging settings. Kept in the app project (not passed via
        global -p: flags) so they do NOT propagate to the referenced MAUI
        library projects, which would otherwise try to build their own appx. -->
