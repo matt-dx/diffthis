@@ -31,6 +31,12 @@
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
   </PropertyGroup>
+  <!-- Self-contained exe settings. Kept here so they do NOT propagate to
+       referenced library projects via global -p: flags. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' AND '$(WindowsPackageType)' == 'None'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
   <!-- MSIX Store packaging settings. Kept in the app project (not passed via
        global -p: flags) so they do NOT propagate to the referenced MAUI
        library projects, which would otherwise try to build their own appx. -->
