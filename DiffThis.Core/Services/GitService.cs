@@ -116,6 +116,7 @@ public class GitService : IGitService
         var statMap = ParseNumstat(statResult.StandardOutput);
         var statusMap = ParseNameStatus(nameStatusResult.StandardOutput);
         var files = await Task.Run(() => ParseUnifiedDiff(diffResult.StandardOutput, statMap, statusMap));
+        var truncatedCount = files.Count(f => f.IsTruncated);
 
         return new DiffResult
         {
@@ -125,7 +126,9 @@ public class GitService : IGitService
             BaseBranch = baseBranch,
             CompareBranch = compareBranch,
             ContextLines = contextLines,
-            Files = files
+            Files = files,
+            IsTruncated = truncatedCount > 0,
+            TruncatedFileCount = truncatedCount,
         };
     }
 
@@ -174,6 +177,9 @@ public class GitService : IGitService
         return result;
     }
 
+    // ~50 k rendered diff lines keeps the Blazor IPC batch well under the JSON size limit.
+    private const int MaxDiffLines = 50_000;
+
     private static List<DiffFile> ParseUnifiedDiff(
         string diffOutput,
         Dictionary<string, (int additions, int deletions)> statMap,
@@ -183,6 +189,8 @@ public class GitService : IGitService
         DiffFile? currentFile = null;
         DiffHunk? currentHunk = null;
         int oldLine = 0, newLine = 0;
+        int totalLines = 0;
+        bool lineLimitHit = false;
 
         foreach (var rawLine in diffOutput.Split('\n'))
         {
@@ -191,6 +199,7 @@ public class GitService : IGitService
                 if (currentFile != null) files.Add(currentFile);
                 currentHunk = null;
                 currentFile = new DiffFile();
+                if (lineLimitHit) currentFile.IsTruncated = true;
                 continue;
             }
 
@@ -223,6 +232,9 @@ public class GitService : IGitService
                 continue;
             }
 
+            // Skip hunk content for files that start after the line limit is hit.
+            if (lineLimitHit) continue;
+
             if (rawLine.StartsWith("@@ "))
             {
                 currentHunk = ParseHunkHeader(rawLine);
@@ -250,6 +262,13 @@ public class GitService : IGitService
                 currentHunk.Lines.Add(new DiffLine { Type = DiffLineType.Context, Content = rawLine[1..], OldLineNumber = oldLine++, NewLineNumber = newLine++ });
             }
             // Lines starting with '\' are git markers like "\ No newline at end of file" — skip them
+
+            if (++totalLines >= MaxDiffLines)
+            {
+                lineLimitHit = true;
+                currentFile.IsTruncated = true;
+                currentHunk = null; // don't add more lines to the open hunk
+            }
         }
 
         if (currentFile != null) files.Add(currentFile);

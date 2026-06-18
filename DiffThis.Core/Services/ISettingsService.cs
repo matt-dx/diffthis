@@ -32,6 +32,9 @@ public interface ISettingsService
     // ── Ollama endpoints ───────────────────────────────────────────────────
     string OllamaEndpointsJson { get; set; }  // JSON-serialised List<PersistedEndpoint>
 
+    // ── Logging ────────────────────────────────────────────────────────────
+    bool AiLoggingEnabled { get; set; }  // default: true in Debug, false in Release
+
     // ── Unsupported / experimental features ───────────────────────────────
     bool AnalysisLinksEnabled { get; set; }  // default: false
 

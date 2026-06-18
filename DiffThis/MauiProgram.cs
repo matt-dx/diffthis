@@ -35,6 +35,7 @@ public static class MauiProgram
 #endif
 
         builder.Services.AddSingleton<ISettingsService, SettingsService>();
+        builder.Services.AddSingleton<ILogService, LogService>();
         builder.Services.AddSingleton<IGitService, GitService>();
         builder.Services.AddSingleton<IExportService, ExportService>();
         builder.Services.AddSingleton<DiffSessionService>();

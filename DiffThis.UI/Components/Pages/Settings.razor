@@ -1,5 +1,6 @@
 @page "/settings"
 @inject ISettingsService Svc
+@inject ILogService LogSvc
 @inject IClaudeAuthService ClaudeAuth
 @inject IClaudeModelService ModelService
 @inject ICopilotAuthService CopilotAuth
@@ -102,21 +103,23 @@
                     {
                         var capturedId = model.Id;
                         <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
-                            <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
-                            <div class="model-list-name-row">
-                                <input class="model-name-input" value="@model.DisplayName"
-                                       @onchange="e => ModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
-                                       title="Edit display name" />
-                                @if (model.IsCustomName)
-                                {
-                                    <button class="model-reset-btn" title="Reset to default name"
-                                            @onclick="() => ModelService.ResetDisplayName(capturedId)">↺</button>
-                                }
-                                <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
-                                        title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
-                                        @onclick="() => ModelService.ToggleHidden(capturedId)">
-                                    <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
-                                </button>
+                            <div class="model-list-main-row">
+                                <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
+                                <div class="model-list-name-row">
+                                    <input class="model-name-input" value="@model.DisplayName"
+                                           @onchange="e => ModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                           title="Edit display name" />
+                                    @if (model.IsCustomName)
+                                    {
+                                        <button class="model-reset-btn" title="Reset to default name"
+                                                @onclick="() => ModelService.ResetDisplayName(capturedId)">↺</button>
+                                    }
+                                    <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                            title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                            @onclick="() => ModelService.ToggleHidden(capturedId)">
+                                        <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     }
@@ -243,21 +246,35 @@
                     {
                         var capturedId = model.Id;
                         <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
-                            <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
-                            <div class="model-list-name-row">
-                                <input class="model-name-input" value="@model.DisplayName"
-                                       @onchange="e => CopilotModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
-                                       title="Edit display name" />
-                                @if (model.IsCustomName)
-                                {
-                                    <button class="model-reset-btn" title="Reset to default name"
-                                            @onclick="() => CopilotModelService.ResetDisplayName(capturedId)">↺</button>
-                                }
-                                <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
-                                        title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
-                                        @onclick="() => CopilotModelService.ToggleHidden(capturedId)">
-                                    <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
-                                </button>
+                            <div class="model-list-main-row">
+                                <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
+                                <div class="model-list-name-row">
+                                    @if (model.ReasoningEfforts.Length > 0)
+                                    {
+                                        <span class="model-effort-label" title="Controls how much of the output token budget the model spends on internal reasoning. Lower = more tokens for response text.">Effort</span>
+                                        <select class="model-effort-select"
+                                                value="@(model.ReasoningEffort ?? "low")"
+                                                @onchange="e => CopilotModelService.SetReasoningEffort(capturedId, e.Value?.ToString())">
+                                            @foreach (var effort in model.ReasoningEfforts)
+                                            {
+                                                <option value="@effort">@(char.ToUpper(effort[0]) + effort[1..])</option>
+                                            }
+                                        </select>
+                                    }
+                                    <input class="model-name-input" value="@model.DisplayName"
+                                           @onchange="e => CopilotModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                           title="Edit display name" />
+                                    @if (model.IsCustomName)
+                                    {
+                                        <button class="model-reset-btn" title="Reset to default name"
+                                                @onclick="() => CopilotModelService.ResetDisplayName(capturedId)">↺</button>
+                                    }
+                                    <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                            title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                            @onclick="() => CopilotModelService.ToggleHidden(capturedId)">
+                                        <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     }
@@ -462,6 +479,43 @@
     </section>
 
     <section class="settings-section">
+        <p class="section-title">Logging</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">AI request logging</p>
+                    <p class="setting-desc">Write request parameters and raw API responses to daily log files. Useful for diagnosing provider errors.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="aiLoggingEnabled" @bind:after="SaveAiLogging" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            @if (aiLoggingEnabled)
+            {
+                <hr class="setting-card-divider" />
+                <div class="setting-row">
+                    <p class="setting-desc" style="margin:0">
+                        @if (LogSvc.LogFileCount == 0)
+                        {
+                            <span>No log files.</span>
+                        }
+                        else
+                        {
+                            <span>@LogSvc.LogFileCount log file@(LogSvc.LogFileCount == 1 ? "" : "s") in <code>@LogSvc.LogsDirectory</code></span>
+                        }
+                    </p>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn btn-sm" @onclick="OpenLogsFolder">Open folder</button>
+                        <button class="btn btn-sm btn-danger" disabled="@(LogSvc.LogFileCount == 0)"
+                                @onclick="() => _showClearLogsConfirm = true">Clear</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="settings-section">
         <p class="section-title">Data</p>
         <div class="setting-card">
             <div class="setting-row">
@@ -500,6 +554,20 @@
             </div>
         </div>
     </section>
+
+    @if (_showClearLogsConfirm)
+    {
+        <div class="modal-backdrop" @onclick="() => _showClearLogsConfirm = false">
+            <div class="modal" @onclick:stopPropagation>
+                <p class="modal-title">Clear log files?</p>
+                <p class="modal-body">All @LogSvc.LogFileCount log file@(LogSvc.LogFileCount == 1 ? "" : "s") will be deleted. This cannot be undone.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" @onclick="() => _showClearLogsConfirm = false">Cancel</button>
+                    <button class="btn btn-sm btn-danger" @onclick="ClearLogs">Yes, clear</button>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_showClearRepoHistoryConfirm)
     {
@@ -623,6 +691,8 @@
     private bool aiToolsEnabled;
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
+    private bool aiLoggingEnabled;
+    private bool           _showClearLogsConfirm;
     private bool           _showClearRepoHistoryConfirm;
     private bool           _showClearCacheConfirm;
     private bool           _showClearVisibilityConfirm;
@@ -648,6 +718,7 @@
         aiToolsEnabled        = Svc.AiToolsEnabled;
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
+        aiLoggingEnabled      = Svc.AiLoggingEnabled;
 
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
@@ -774,6 +845,15 @@
     private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
     private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
     private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;
+    private void SaveAiLogging()      => Svc.AiLoggingEnabled     = aiLoggingEnabled;
+
+    private void ClearLogs()
+    {
+        LogSvc.ClearLogs();
+        _showClearLogsConfirm = false;
+    }
+
+    private void OpenLogsFolder() => LogSvc.OpenLogsFolder();
 
     private void ClearRepoHistory()
     {

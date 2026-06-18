@@ -60,10 +60,21 @@ else
         <div class="@(_sideBySide ? "panels-side-by-side" : "panel-tab-content")">
             <div class="panel-column @(!_sideBySide && _activeTab != 0 ? "panel-hidden" : "")">
                 @if (_sideBySide) { <div class="panel-heading">Diff</div> }
-                <DiffPanel Diff="_diff"
-                           PendingFocus="_pendingFocus"
-                           PendingFocusConsumed="OnFocusConsumed"
-                           @bind-SidebarCollapsed="_diffSidebarCollapsed" />
+                <ErrorBoundary>
+                    <ChildContent>
+                        <DiffPanel Diff="_diff"
+                                   PendingFocus="_pendingFocus"
+                                   PendingFocusConsumed="OnFocusConsumed"
+                                   @bind-SidebarCollapsed="_diffSidebarCollapsed" />
+                    </ChildContent>
+                    <ErrorContent Context="ex">
+                        <div class="diff-render-error">
+                            <p class="diff-render-error-title">This diff is too large to display.</p>
+                            <p class="diff-render-error-sub">The diff exceeded the rendering limit. Try comparing a smaller range of commits, or use a narrower context window in Settings.</p>
+                            <a class="btn btn-sm" href="/branches?path=@Uri.EscapeDataString(_diff.RepositoryPath)">← Change range</a>
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
             </div>
             <div class="panel-column @(_sideBySide ? "panel-column-border" : "") @(!_sideBySide && _activeTab != 1 ? "panel-hidden" : "")">
                 @if (_sideBySide)

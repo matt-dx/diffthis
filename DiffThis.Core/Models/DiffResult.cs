@@ -17,6 +17,12 @@ public class DiffResult
     public int ContextLines { get; set; } = 3;
     public List<DiffFile> Files { get; set; } = [];
 
+    /// True when the diff was truncated due to exceeding the line-count limit.
+    public bool IsTruncated { get; set; }
+    /// Number of files whose hunk content was omitted because the limit was reached.
+    public int TruncatedFileCount { get; set; }
+
+    public int FileCount => Files.Count;
     public int TotalAdditions => Files.Sum(f => f.Additions);
     public int TotalDeletions => Files.Sum(f => f.Deletions);
 }
@@ -30,6 +36,8 @@ public class DiffFile
     public int Deletions { get; set; }
     public List<DiffHunk> Hunks { get; set; } = [];
     public bool IsBinary { get; set; }
+    /// True when this file's hunk content was omitted because the total line limit was reached.
+    public bool IsTruncated { get; set; }
 
     public string DisplayPath => Status == DiffFileStatus.Renamed
         ? $"{OldPath} → {NewPath}"

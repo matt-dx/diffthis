@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DiffThis.Core.Models;
+using DiffThis.Core.Services;
 using DiffThis.AI.Claude.Models;
 using DiffThis.AI.Shared.Services;
 
@@ -17,21 +18,23 @@ public class ClaudeService : IClaudeService
     private readonly IClaudeAuthService  _auth;
     private readonly IClaudeModelService _models;
     private readonly PromptService       _prompts;
+    private readonly ILogService         _log;
 
-    public ClaudeService(IClaudeAuthService auth, IClaudeModelService models, PromptService prompts)
+    public ClaudeService(IClaudeAuthService auth, IClaudeModelService models, PromptService prompts, ILogService log)
     {
         _auth    = auth;
         _models  = models;
         _prompts = prompts;
+        _log     = log;
     }
 
     public Task<string> ReviewDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
-        => CallAsync(_prompts.BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, ct);
+        => CallAsync(_prompts.BuildReviewPrompt(diff), model, toolsEnabled, maxTurns, "review", ct);
 
     public Task<string> ExplainDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
-        => CallAsync(_prompts.BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, ct);
+        => CallAsync(_prompts.BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, "explain", ct);
 
-    private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, CancellationToken ct)
+    private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, string feature, CancellationToken ct)
     {
         if (_auth.State != ClaudeAuthState.Authenticated)
             throw new InvalidOperationException("Not connected to Claude. Check Settings.");
@@ -55,17 +58,26 @@ public class ClaudeService : IClaudeService
             ClaudeAuthService.AppendArg(psi, "--max-turns"); ClaudeAuthService.AppendArg(psi, maxTurns.ToString());
         }
 
+        _log.WriteRequest("claude", model, feature,
+            $"  tools: {toolsEnabled}  max-turns: {maxTurns}  prompt: {prompt.Length} chars");
+
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start claude process.");
 
         await proc.StandardInput.WriteAsync(prompt.AsMemory(), ct);
         proc.StandardInput.Close();
 
+        var sw         = Stopwatch.StartNew();
         var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = proc.StandardError.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct);
+        sw.Stop();
         var stdout = (await stdoutTask).Trim();
         var stderr = (await stderrTask).Trim();
+
+        _log.WriteResponse("claude", model, feature,
+            $"  exit: {proc.ExitCode}\n  stdout: {stdout.Length} chars\n{(stderr.Length > 0 ? $"  stderr: {stderr}\n" : "")}",
+            sw.ElapsedMilliseconds);
 
         if (proc.ExitCode != 0)
         {

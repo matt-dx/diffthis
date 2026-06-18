@@ -17,4 +17,9 @@ public interface ICopilotModelService
     void   ResetDisplayName(string modelId);
     void   ToggleHidden(string modelId);
     string GetDisplayName(string modelId);
+
+    /// Returns the reasoning_effort value to send in a request (null = omit the parameter).
+    /// Falls back to "low" for known thinking models when no user preference is set.
+    string? GetReasoningEffort(string modelId);
+    void    SetReasoningEffort(string modelId, string? effort);
 }

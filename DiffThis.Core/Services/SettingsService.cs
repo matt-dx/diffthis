@@ -19,6 +19,7 @@ public class SettingsService : ISettingsService
     private const string CopilotTimeoutKey        = "copilot_timeout_seconds";
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
+    private const string AiLoggingKey            = "ai_logging_enabled";
     private const string WindowXKey             = "window_x";
     private const string WindowYKey             = "window_y";
     private const string WindowWidthKey         = "window_width";
@@ -152,6 +153,16 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(AnalysisLinksKey, false);
         set => Preferences.Set(AnalysisLinksKey, value);
+    }
+
+    public bool AiLoggingEnabled
+    {
+#if DEBUG
+        get => Preferences.Get(AiLoggingKey, true);
+#else
+        get => Preferences.Get(AiLoggingKey, false);
+#endif
+        set => Preferences.Set(AiLoggingKey, value);
     }
 
     public int WindowX             { get => Preferences.Get(WindowXKey,             -1);    set => Preferences.Set(WindowXKey,             value); }
