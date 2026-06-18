@@ -24,7 +24,7 @@
                 </button>
             </div>
             <div class="sidebar-heading">
-                <span>Changed Files</span>
+                <span>@Diff.FileCount Changed Files</span>
                 <div class="file-stats">
                     <span class="add">+@Diff.TotalAdditions</span>
                     <span class="del">-@Diff.TotalDeletions</span>
@@ -58,6 +58,13 @@
 
         <!-- Diff content -->
         <div class="diff-content" style="position:relative">
+            @if (Diff.IsTruncated)
+            {
+                <div class="diff-truncation-banner">
+                    <span class="icon icon-warning" style="width:16px;height:16px;flex-shrink:0"></span>
+                    <span>This diff is very large. Hunk content for <strong>@Diff.TruncatedFileCount file@(Diff.TruncatedFileCount == 1 ? "" : "s")</strong> was omitted to prevent the app from running out of memory. All changed files are still listed in the sidebar.</span>
+                </div>
+            }
             @if (Diff.Files.Count == 0)
             {
                 <div class="diff-empty">
@@ -120,6 +127,10 @@
                     @if (file.IsBinary)
                     {
                         <div class="diff-note">Binary file</div>
+                    }
+                    else if (file.IsTruncated && file.Hunks.Count == 0)
+                    {
+                        <div class="diff-note diff-note-truncated">Diff omitted — total line limit reached</div>
                     }
                     else if (file.Hunks.Count == 0)
                     {

@@ -105,17 +105,30 @@ public class CopilotModelService : ICopilotModelService
 
                         // capabilities.type identifies whether the model supports chat.
                         // Only "chat" models can be used with /chat/completions.
-                        string? capType = null;
-                        if (e.TryGetProperty("capabilities", out var caps)
-                            && caps.TryGetProperty("type", out var typeEl))
-                            capType = typeEl.GetString();
+                        string?  capType          = null;
+                        string[] reasoningEfforts = [];
+                        if (e.TryGetProperty("capabilities", out var caps))
+                        {
+                            if (caps.TryGetProperty("type", out var typeEl))
+                                capType = typeEl.GetString();
+                            // capabilities.supports.reasoning_effort: ["low","medium","high"] (thinking models only)
+                            if (caps.TryGetProperty("supports", out var sup)
+                                && sup.TryGetProperty("reasoning_effort", out var re)
+                                && re.ValueKind == JsonValueKind.Array)
+                            {
+                                reasoningEfforts = re.EnumerateArray()
+                                    .Select(x => x.GetString() ?? "")
+                                    .Where(x => x.Length > 0)
+                                    .ToArray();
+                            }
+                        }
 
-                        return (id: cleanId, display: friendlyName ?? name ?? InferName(cleanId), capType);
+                        return (id: cleanId, display: friendlyName ?? name ?? InferName(cleanId), capType, reasoningEfforts);
                     })
                     .Where(x => !string.IsNullOrEmpty(x.id)
                                 && IsChatModel(x.id)
                                 && IsChatCapability(x.capType))
-                    .Select(x => (x.id, x.display))
+                    .Select(x => (x.id, x.display, x.reasoningEfforts))
                     .ToList();
 
                 if (fetched.Count > 0)
@@ -141,13 +154,13 @@ public class CopilotModelService : ICopilotModelService
         }
     }
 
-    private void MergeInto(List<(string id, string display)> fetched, bool fromApi)
+    private void MergeInto(List<(string id, string display, string[] reasoningEfforts)> fetched, bool fromApi)
     {
         // Step 1: build initial display names, detect preview/dated models
         var parsed = fetched.Select(f =>
         {
             var (baseId, dateSuffix, isPreview) = ParseModelId(f.id);
-            return (f.id, baseId, dateSuffix, isPreview, rawDisplay: f.display);
+            return (f.id, baseId, dateSuffix, isPreview, rawDisplay: f.display, f.reasoningEfforts);
         }).ToList();
 
         // Step 2: for each model, determine the canonical representative of its base group.
@@ -195,12 +208,15 @@ public class CopilotModelService : ICopilotModelService
             var isCanonical = canonicalIds.Contains(p.id);
             merged.Add(new CopilotModel
             {
-                Id           = p.id,
-                DisplayName  = existing?.IsCustomName == true ? existing.DisplayName : displayNames[p.id],
-                IsCustomName = existing?.IsCustomName ?? false,
+                Id               = p.id,
+                DisplayName      = existing?.IsCustomName == true ? existing.DisplayName : displayNames[p.id],
+                IsCustomName     = existing?.IsCustomName ?? false,
                 // New models: canonical=visible, non-canonical (dated/preview duplicates)=hidden.
                 // Existing models: preserve user choice.
-                IsHidden     = existing is not null ? existing.IsHidden : !isCanonical,
+                IsHidden         = existing is not null ? existing.IsHidden : !isCanonical,
+                // From API: supported effort levels. Preserve user's choice across refreshes.
+                ReasoningEfforts = p.reasoningEfforts,
+                ReasoningEffort  = existing?.ReasoningEffort,
             });
         }
         _models         = merged;
@@ -271,8 +287,28 @@ public class CopilotModelService : ICopilotModelService
 
     private void ApplyDefaults()
     {
-        var list = DefaultModels.Select(x => (x.Id, x.Name)).ToList();
+        var list = DefaultModels.Select(x => (x.Id, x.Name, Array.Empty<string>())).ToList();
         MergeInto(list, fromApi: false);
+    }
+
+    public string? GetReasoningEffort(string modelId)
+    {
+        var m = _models.FirstOrDefault(x => x.Id == modelId);
+        if (m is not null && m.ReasoningEfforts.Length > 0)
+            return m.ReasoningEffort ?? "low";
+        // Fallback for built-in defaults list: Claude Opus 4.x is a known thinking model
+        if (modelId.StartsWith("claude-opus-4", StringComparison.OrdinalIgnoreCase))
+            return m?.ReasoningEffort ?? "low";
+        return null;
+    }
+
+    public void SetReasoningEffort(string modelId, string? effort)
+    {
+        var m = _models.FirstOrDefault(x => x.Id == modelId);
+        if (m is null) return;
+        m.ReasoningEffort = effort;
+        Save();
+        ModelsChanged?.Invoke();
     }
 
     // ── Model management ──────────────────────────────────────────────────
