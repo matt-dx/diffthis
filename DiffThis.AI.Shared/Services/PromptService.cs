@@ -168,6 +168,14 @@ public class PromptService
     private static string BuildDiffContent(DiffResult diff, int maxChars)
     {
         var sb = new StringBuilder();
+
+        if (diff.IsTruncated)
+            sb.AppendLine(
+                $"[NOTE: This diff was truncated due to size. Hunk content for {diff.TruncatedFileCount} file(s) " +
+                $"was omitted; only {diff.Files.Count - diff.TruncatedFileCount} of {diff.Files.Count} changed files " +
+                $"have visible diff lines below. Your analysis is necessarily incomplete — acknowledge this limitation " +
+                $"and focus your review on the files that do have content.]\n");
+
         var written = 0;
         var truncated = false;
 

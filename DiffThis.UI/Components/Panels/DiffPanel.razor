@@ -62,7 +62,7 @@
             {
                 <div class="diff-truncation-banner">
                     <span class="icon icon-warning" style="width:16px;height:16px;flex-shrink:0"></span>
-                    <span>This diff is very large. Hunk content for <strong>@Diff.TruncatedFileCount file@(Diff.TruncatedFileCount == 1 ? "" : "s")</strong> was omitted to prevent the app from running out of memory. All changed files are still listed in the sidebar.</span>
+                    <span>This diff is very large. Hunk content for <strong>@Diff.TruncatedFileCount file@(Diff.TruncatedFileCount == 1 ? "" : "s")</strong> was omitted to prevent the app from running out of memory. All changed files are still listed in the sidebar. Note that the quality of LLM features will be negatively impacted by the truncation.</span>
                 </div>
             }
             @if (Diff.Files.Count == 0)

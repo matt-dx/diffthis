@@ -22,7 +22,7 @@ public class DiffResult
     /// Number of files whose hunk content was omitted because the limit was reached.
     public int TruncatedFileCount { get; set; }
 
-    public int FileCount => Files.Count(f => f.IsTruncated == false );
+    public int FileCount => Files.Count;
     public int TotalAdditions => Files.Sum(f => f.Additions);
     public int TotalDeletions => Files.Sum(f => f.Deletions);
 }
