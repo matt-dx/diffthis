@@ -15,4 +15,8 @@ public interface IClaudeAuthService
 
     /// Refreshes the OAuth access token via the Anthropic token endpoint, then reloads from disk.
     Task<bool> RefreshAsync();
+
+    /// Launches `claude auth login` in a visible console window, waits for it to complete, then
+    /// reloads credentials from disk. Returns whether authentication succeeded.
+    Task<bool> TryInteractiveLoginAsync(CancellationToken ct = default);
 }
