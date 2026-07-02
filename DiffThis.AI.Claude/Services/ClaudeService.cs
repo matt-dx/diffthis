@@ -38,8 +38,14 @@ public class ClaudeService : IClaudeService
     {
         if (_auth.State != ClaudeAuthState.Authenticated || _auth.IsTokenExpired)
         {
+            var wasAuthenticated = _auth.State == ClaudeAuthState.Authenticated;
             if (isRetry || !await TryRecoverAuthAsync(ct))
-                throw new InvalidOperationException("Not connected to Claude. Check Settings.");
+            {
+                throw wasAuthenticated
+                    ? new UnauthorizedAccessException(
+                        "Claude session expired. Run `claude auth login` in your terminal, then reload in Settings.")
+                    : new InvalidOperationException("Not connected to Claude. Check Settings.");
+            }
         }
 
         var psi = ClaudeAuthService.CreateProcessStartInfo();
@@ -109,8 +115,9 @@ public class ClaudeService : IClaudeService
         return stdout;
     }
 
-    // Tries a silent token refresh first; only falls back to the interactive (visible-window)
-    // `claude auth login` flow if the refresh token itself is no longer valid.
+    // Tries a silent token refresh first; falls back to the interactive (visible-window)
+    // `claude auth login` flow whenever the silent refresh doesn't yield a valid token
+    // (no/invalid refresh token, or a transient refresh failure).
     private async Task<bool> TryRecoverAuthAsync(CancellationToken ct)
         => await _auth.RefreshAsync() || await _auth.TryInteractiveLoginAsync(ct);
 

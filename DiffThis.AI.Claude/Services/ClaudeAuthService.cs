@@ -253,11 +253,16 @@ public class ClaudeAuthService : IClaudeAuthService
 
             await proc.WaitForExitAsync(ct);
         }
-        catch { return false; }
+        catch
+        {
+            // If the wait was canceled or otherwise threw, don't leave the login process running.
+            try { if (proc is { HasExited: false }) proc.Kill(entireProcessTree: true); } catch { }
+            return false;
+        }
         finally { proc?.Dispose(); }
 
         Reload();
-        return State == ClaudeAuthState.Authenticated;
+        return State == ClaudeAuthState.Authenticated && !IsTokenExpired;
     }
 
     private async Task TryReadEmailAsync()
