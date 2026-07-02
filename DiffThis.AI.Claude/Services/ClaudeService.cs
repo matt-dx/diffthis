@@ -34,10 +34,13 @@ public class ClaudeService : IClaudeService
     public Task<string> ExplainDiffAsync(DiffResult diff, string model, bool toolsEnabled, int maxTurns, CancellationToken ct = default)
         => CallAsync(_prompts.BuildExplainPrompt(diff), model, toolsEnabled, maxTurns, "explain", ct);
 
-    private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, string feature, CancellationToken ct)
+    private async Task<string> CallAsync(string prompt, string model, bool toolsEnabled, int maxTurns, string feature, CancellationToken ct, bool isRetry = false)
     {
-        if (_auth.State != ClaudeAuthState.Authenticated)
-            throw new InvalidOperationException("Not connected to Claude. Check Settings.");
+        if (_auth.State != ClaudeAuthState.Authenticated || _auth.IsTokenExpired)
+        {
+            if (isRetry || !await TryRecoverAuthAsync(ct))
+                throw new InvalidOperationException("Not connected to Claude. Check Settings.");
+        }
 
         var psi = ClaudeAuthService.CreateProcessStartInfo();
         psi.RedirectStandardInput  = true;
@@ -93,13 +96,23 @@ public class ClaudeService : IClaudeService
             if (err.Contains("rate limit", StringComparison.OrdinalIgnoreCase) || err.Contains("429"))
                 throw new HttpRequestException("Rate limit reached. Wait a moment and try again.");
             if (err.Contains("auth") || err.Contains("login") || err.Contains("401"))
+            {
+                if (!isRetry && await TryRecoverAuthAsync(ct))
+                    return await CallAsync(prompt, model, toolsEnabled, maxTurns, feature, ct, isRetry: true);
+
                 throw new UnauthorizedAccessException(
                     "Claude session expired. Run `claude auth login` in your terminal, then reload in Settings.");
+            }
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? "claude returned no output." : err);
         }
 
         return stdout;
     }
+
+    // Tries a silent token refresh first; only falls back to the interactive (visible-window)
+    // `claude auth login` flow if the refresh token itself is no longer valid.
+    private async Task<bool> TryRecoverAuthAsync(CancellationToken ct)
+        => await _auth.RefreshAsync() || await _auth.TryInteractiveLoginAsync(ct);
 
     private static bool IsModelUnavailableError(string err) =>
         err.Contains("unknown model",     StringComparison.OrdinalIgnoreCase) ||

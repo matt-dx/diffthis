@@ -59,7 +59,9 @@ public class ClaudeAuthService : IClaudeAuthService
     // they require cmd.exe /c as the host process.
     // Using ArgumentList (not the Arguments string) for all cases lets .NET handle
     // quoting via CreateProcess rules — no hand-rolled cmd.exe escaping needed.
-    internal static ProcessStartInfo CreateProcessStartInfo()
+    // visible=true is used for `claude auth login`, which needs a console the user can watch
+    // (it prints an authorization URL and waits on the browser callback).
+    internal static ProcessStartInfo CreateProcessStartInfo(bool visible = false)
     {
         var exe = ClaudeExe;
         var ext = Path.GetExtension(exe).ToLowerInvariant();
@@ -68,7 +70,7 @@ public class ClaudeAuthService : IClaudeAuthService
             var psi = new ProcessStartInfo("cmd.exe")
             {
                 UseShellExecute = false,
-                CreateNoWindow  = true,
+                CreateNoWindow  = !visible,
             };
             psi.ArgumentList.Add("/c");
             psi.ArgumentList.Add(exe);
@@ -77,7 +79,7 @@ public class ClaudeAuthService : IClaudeAuthService
         return new ProcessStartInfo(exe)
         {
             UseShellExecute = false,
-            CreateNoWindow  = true,
+            CreateNoWindow  = !visible,
         };
     }
 
@@ -139,7 +141,7 @@ public class ClaudeAuthService : IClaudeAuthService
             await TryOAuthRefreshAsync(_creds.RefreshToken);
 
         Reload();
-        return State == ClaudeAuthState.Authenticated;
+        return State == ClaudeAuthState.Authenticated && !IsTokenExpired;
     }
 
     // POSTs to the Anthropic OAuth token endpoint with the refresh_token grant.
@@ -230,6 +232,32 @@ public class ClaudeAuthService : IClaudeAuthService
             File.Move(tmp, CredentialsPath, overwrite: true);
         }
         catch { /* best effort — leave existing credentials unchanged */ }
+    }
+
+    /// <summary>
+    /// Launches `claude auth login` in a visible console window so the user can complete the
+    /// browser-based OAuth flow, waits for it to exit, then reloads credentials from disk.
+    /// </summary>
+    public async Task<bool> TryInteractiveLoginAsync(CancellationToken ct = default)
+    {
+        Process? proc = null;
+        try
+        {
+            var psi = CreateProcessStartInfo(visible: true);
+            psi.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            AppendArg(psi, "auth");
+            AppendArg(psi, "login");
+
+            proc = Process.Start(psi);
+            if (proc is null) return false;
+
+            await proc.WaitForExitAsync(ct);
+        }
+        catch { return false; }
+        finally { proc?.Dispose(); }
+
+        Reload();
+        return State == ClaudeAuthState.Authenticated;
     }
 
     private async Task TryReadEmailAsync()
