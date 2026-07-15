@@ -4,6 +4,9 @@
 @inject ICopilotAuthService CopilotAuth
 @inject ICopilotService Copilot
 @inject ICopilotModelService CopilotModelService
+@inject IOpenAiAuthService OpenAiAuth
+@inject IOpenAiService OpenAI
+@inject IOpenAiModelService OpenAiModelService
 @inject IOllamaEndpointService OllamaEndpoints
 @inject IOllamaService OllamaSvc
 @inject AiCacheService AiCache
@@ -39,10 +42,13 @@
         .Concat(reviewItems.Select(k => (feature: "review", key: k)))
         .ToList();
 
-    // Combined model list: Claude, then Copilot, then Ollama (per endpoint)
+    // Combined model list: Claude, OpenAI, Copilot, then Ollama (per endpoint)
     var allModels = ModelService.VisibleModels
         .Select(m => new AiModel(m.Id, m.Id, m.DisplayName, AiProvider.Claude,
             IconId: "icon-claude", BadgeColor: "#e07b39"))
+        .Concat(OpenAiModelService.VisibleModels
+            .Select(m => new AiModel($"openai:{m.Id}", m.Id, m.DisplayName, AiProvider.OpenAI,
+                IconId: "icon-openai", BadgeColor: "#10A37F")))
         .Concat(CopilotModelService.VisibleModels
             .Select(m => new AiModel($"copilot:{m.Id}", m.Id, m.DisplayName, AiProvider.Copilot,
                 IconId: "icon-copilot", BadgeColor: "#8534F3")))
@@ -67,12 +73,14 @@
 }
 
 @if (ClaudeAuth.State != ClaudeAuthState.Authenticated
+  && OpenAiAuth.State != OpenAiAuthState.Authenticated
   && CopilotAuth.State != CopilotAuthState.Authenticated
   && !OllamaEndpoints.Endpoints.Any())
 {
     <div class="analysis-panel analysis-panel-unauthenticated @(Settings.FontLigatures ? "ligatures" : "")">
         <p>Sign in to an AI provider or add an Ollama endpoint in Settings to use AI features.</p>
         <p>For Claude: run <code>claude auth login</code> in a terminal, then click <strong>Reload</strong> in Settings.</p>
+        <p>For OpenAI: click <strong>Sign in with ChatGPT</strong> in Settings.</p>
         <p>For GitHub Copilot: click <strong>Sign in</strong> in Settings.</p>
         <p>For Ollama: add an endpoint in Settings.</p>
     </div>
@@ -406,11 +414,15 @@ else
     private static bool IsCopilot(string modelKey) =>
         modelKey.StartsWith("copilot:", StringComparison.Ordinal);
 
+    private static bool IsOpenAI(string modelKey) =>
+        modelKey.StartsWith("openai:", StringComparison.Ordinal);
+
     private static bool IsOllama(string modelKey) =>
         modelKey.StartsWith("ollama:", StringComparison.Ordinal);
 
     private string ProviderIconClass(string modelKey)
     {
+        if (IsOpenAI(modelKey)) return "icon-openai";
         if (IsCopilot(modelKey)) return "icon-copilot";
         if (IsOllama(modelKey))
         {
@@ -422,7 +434,7 @@ else
     }
 
     private string ProviderBadgeClass(string modelKey) =>
-        IsCopilot(modelKey) ? "copilot-badge" : IsOllama(modelKey) ? "ollama-badge" : "claude-badge";
+        IsOpenAI(modelKey) ? "openai-badge" : IsCopilot(modelKey) ? "copilot-badge" : IsOllama(modelKey) ? "ollama-badge" : "claude-badge";
 
     private string ProviderBadgeStyle(string modelKey)
     {
@@ -434,6 +446,8 @@ else
 
     private string GetAiDisplayName(string modelKey)
     {
+        if (IsOpenAI(modelKey))
+            return OpenAiModelService.GetDisplayName(modelKey["openai:".Length..]);
         if (IsCopilot(modelKey))
             return CopilotModelService.GetDisplayName(modelKey["copilot:".Length..]);
         if (IsOllama(modelKey))
@@ -460,7 +474,14 @@ else
         try
         {
             string result;
-            if (IsCopilot(key.Model))
+            if (IsOpenAI(key.Model))
+            {
+                var rawId = key.Model["openai:".Length..];
+                result = key.Feature == "review"
+                    ? await OpenAI.ReviewDiffAsync(diff, rawId)
+                    : await OpenAI.ExplainDiffAsync(diff, rawId);
+            }
+            else if (IsCopilot(key.Model))
             {
                 var rawId = key.Model["copilot:".Length..];
                 result = key.Feature == "review"
@@ -487,7 +508,9 @@ else
         catch (UnauthorizedAccessException ex)
         {
             AiCache.FailRun(key, ex.Message);
-            if (!IsCopilot(key.Model) && !IsOllama(key.Model))
+            if (IsOpenAI(key.Model))
+                await OpenAiAuth.RefreshAsync();
+            else if (!IsCopilot(key.Model) && !IsOllama(key.Model))
                 ClaudeAuth.Reload();
         }
         catch (Exception ex)

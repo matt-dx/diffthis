@@ -743,15 +743,16 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .file-ref-icon:hover { opacity: 1; }
 
 /* ── Analysis result cards ───────────────────────────────────────────── */
-.claude-badge, .copilot-badge, .ollama-badge {
+.claude-badge, .openai-badge, .copilot-badge, .ollama-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; flex-shrink: 0;
 }
 .claude-badge  { color: #e07b39; }
+.openai-badge  { color: #10A37F; }
 .copilot-badge { color: #8534F3; }
 .ollama-badge  { color: #D68E42; }
 :root { --ollama-color: #D68E42; }
-.claude-badge .icon, .copilot-badge .icon, .ollama-badge .icon { width: 16px; height: 16px; }
+.claude-badge .icon, .openai-badge .icon, .copilot-badge .icon, .ollama-badge .icon { width: 16px; height: 16px; }
 
 .analysis-feature-badge {
   display: inline-block; padding: 1px 7px; border-radius: 3px;
