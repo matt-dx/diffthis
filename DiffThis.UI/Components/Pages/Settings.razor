@@ -5,6 +5,8 @@
 @inject IClaudeModelService ModelService
 @inject ICopilotAuthService CopilotAuth
 @inject ICopilotModelService CopilotModelService
+@inject IOpenAiAuthService OpenAiAuth
+@inject IOpenAiModelService OpenAiModelService
 @inject IOllamaEndpointService OllamaEndpoints
 @inject AiCacheService AiCache
 @implements IDisposable
@@ -153,6 +155,98 @@
                     <option value="0">Unlimited</option>
                 </select>
             </div>
+            }
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title"><span class="icon icon-openai" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#10A37F"></span>OpenAI</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (OpenAiAuth.State == OpenAiAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            @(OpenAiAuth.StatusText ?? "Connected with ChatGPT")
+                        </p>
+                        <p class="setting-desc">Authentication and token refresh are managed by the official Codex CLI. DiffThis does not store an API key.</p>
+                    }
+                    else if (OpenAiAuth.State == OpenAiAuthState.CliNotFound)
+                    {
+                        <p class="setting-desc"><span class="auth-dot auth-off"></span>Codex CLI not found — install <code>@@openai/codex</code>, then sign in.</p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc"><span class="auth-dot auth-off"></span>Not connected — sign in online with your ChatGPT account.</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(OpenAiAuth.LastError))
+                    {
+                        <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@OpenAiAuth.LastError</p>
+                    }
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                    @if (OpenAiAuth.State == OpenAiAuthState.Authenticated)
+                    {
+                        <button class="btn btn-sm" disabled="@_openAiBusy" @onclick="RefreshOpenAiAuth">Reload</button>
+                        <button class="btn btn-sm btn-danger" disabled="@_openAiBusy" @onclick="OpenAiSignOut">Sign out</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" disabled="@(_openAiBusy || OpenAiAuth.State == OpenAiAuthState.CliNotFound)" @onclick="StartOpenAiSignIn">
+                            @(_openAiBusy ? "Signing in…" : "Sign in with ChatGPT")
+                        </button>
+                        <button class="btn btn-sm" disabled="@_openAiBusy" @onclick="RefreshOpenAiAuth">Reload</button>
+                    }
+                </div>
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
+                    <button class="collapsible-label" @onclick="() => _openAiModelsExpanded = !_openAiModelsExpanded">
+                        <span class="collapsible-chevron @(_openAiModelsExpanded ? "open" : "")">›</span>
+                        <p class="setting-label" style="display:inline">Available models</p>
+                    </button>
+                    <p class="setting-desc">
+                        @if (OpenAiModelService.LastFetchedAt.HasValue)
+                        {
+                            <span>@OpenAiModelService.Models.Count model@(OpenAiModelService.Models.Count == 1 ? "" : "s") · last updated @OpenAiModelService.LastFetchedAt.Value.ToLocalTime().ToString("MMM d · h:mm tt")</span>
+                        }
+                        else { <span>Codex default (refresh to load the CLI catalog)</span> }
+                    </p>
+                </div>
+                <button class="btn btn-sm" disabled="@(OpenAiModelService.IsLoading || OpenAiAuth.State != OpenAiAuthState.Authenticated)" @onclick="RefreshOpenAiModels">
+                    @(OpenAiModelService.IsLoading ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+            @if (_openAiModelsExpanded && OpenAiModelService.Models.Count > 0)
+            {
+                <div class="model-list">
+                    @foreach (var model in OpenAiModelService.Models)
+                    {
+                        var capturedId = model.Id;
+                        <div class="model-list-item @(model.IsHidden ? "model-hidden" : "")">
+                            <div class="model-list-main-row">
+                                <div class="model-list-meta"><code class="model-list-id">@model.Id</code></div>
+                                <div class="model-list-name-row">
+                                    <input class="model-name-input" value="@model.DisplayName"
+                                           @onchange="e => OpenAiModelService.SetDisplayName(capturedId, e.Value?.ToString() ?? model.DisplayName)"
+                                           title="Edit display name" />
+                                    @if (model.IsCustomName)
+                                    {
+                                        <button class="model-reset-btn" title="Reset to default name" @onclick="() => OpenAiModelService.ResetDisplayName(capturedId)">↺</button>
+                                    }
+                                    <button class="model-visibility-btn @(model.IsHidden ? "hidden" : "")"
+                                            title="@(model.IsHidden ? "Show in model dropdowns" : "Hide from model dropdowns")"
+                                            @onclick="() => OpenAiModelService.ToggleHidden(capturedId)">
+                                        <span class="icon @(model.IsHidden ? "icon-eye-off" : "icon-eye")" style="width:14px;height:14px;"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
             }
         </div>
     </section>
@@ -698,6 +792,8 @@
     private bool           _showClearVisibilityConfirm;
     private bool           _modelsExpanded;
     private bool           _copilotModelsExpanded;
+    private bool           _openAiModelsExpanded;
+    private bool           _openAiBusy;
     private bool           _copilotSigningIn;
     private DeviceFlowInfo? _deviceFlowInfo;
     private readonly HashSet<string>        _ollamaModelsExpanded = [];
@@ -722,19 +818,24 @@
 
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
+        OpenAiModelService.ModelsChanged  += OnModelsChanged;
         CopilotAuth.StateChanged          += OnCopilotStateChanged;
+        OpenAiAuth.StateChanged           += OnOpenAiStateChanged;
         OllamaEndpoints.Changed           += OnOllamaChanged;
     }
 
     private void OnModelsChanged()       => InvokeAsync(StateHasChanged);
     private void OnCopilotStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnOpenAiStateChanged()  => InvokeAsync(StateHasChanged);
     private void OnOllamaChanged()       => InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         ModelService.ModelsChanged        -= OnModelsChanged;
         CopilotModelService.ModelsChanged -= OnModelsChanged;
+        OpenAiModelService.ModelsChanged  -= OnModelsChanged;
         CopilotAuth.StateChanged          -= OnCopilotStateChanged;
+        OpenAiAuth.StateChanged           -= OnOpenAiStateChanged;
         OllamaEndpoints.Changed           -= OnOllamaChanged;
     }
 
@@ -828,6 +929,7 @@
 
     private async Task RefreshModels()        => await ModelService.RefreshAsync();
     private async Task RefreshCopilotModels() => await CopilotModelService.RefreshAsync();
+    private async Task RefreshOpenAiModels()  => await OpenAiModelService.RefreshAsync();
 
     private void SetTheme(AppTheme theme)
     {
@@ -890,6 +992,45 @@
         _deviceFlowInfo   = await CopilotAuth.StartDeviceFlowAsync();
         _copilotSigningIn = false;
         StateHasChanged();
+    }
+
+    private async Task StartOpenAiSignIn()
+    {
+        _openAiBusy = true;
+        StateHasChanged();
+        try
+        {
+            await OpenAiAuth.TryInteractiveLoginAsync();
+            if (OpenAiAuth.State == OpenAiAuthState.Authenticated)
+                await OpenAiModelService.RefreshAsync();
+        }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshOpenAiAuth()
+    {
+        _openAiBusy = true;
+        try { await OpenAiAuth.RefreshAsync(); }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenAiSignOut()
+    {
+        _openAiBusy = true;
+        try { await OpenAiAuth.SignOutAsync(); }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
     }
 
     private void CancelCopilotSignIn()

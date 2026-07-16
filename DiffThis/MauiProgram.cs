@@ -48,6 +48,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<ICopilotAuthService, CopilotAuthService>();
         builder.Services.AddSingleton<ICopilotModelService, CopilotModelService>();
         builder.Services.AddSingleton<ICopilotService, CopilotService>();
+        builder.Services.AddSingleton<IOpenAiAuthService, OpenAiAuthService>();
+        builder.Services.AddSingleton<IOpenAiModelService, OpenAiModelService>();
+        builder.Services.AddSingleton<IOpenAiService, OpenAiService>();
         builder.Services.AddSingleton<IOllamaEndpointService, OllamaEndpointService>();
         builder.Services.AddSingleton<IOllamaService, OllamaService>();
 

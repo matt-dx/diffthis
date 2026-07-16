@@ -97,17 +97,19 @@ public class ExportService : IExportService
             .ThenBy(kv => kv.Value.CachedAt))
         {
             var isCopilot = runKey.Model.StartsWith("copilot:", StringComparison.Ordinal);
+            var isOpenAI  = runKey.Model.StartsWith("openai:",  StringComparison.Ordinal);
             var isOllama  = runKey.Model.StartsWith("ollama:",  StringComparison.Ordinal);
             var modelLabel = runKey.Model switch
             {
                 "claude-opus-4-8"           => "Opus 4.8",
                 "claude-sonnet-4-6"         => "Sonnet 4.6",
                 "claude-haiku-4-5-20251001" => "Haiku 4.5",
+                _ when isOpenAI             => runKey.Model["openai:".Length..],
                 _ when isCopilot            => runKey.Model["copilot:".Length..],
                 _ when isOllama             => runKey.Model.Split(':', 3) is [_, _, var m] ? m : runKey.Model,
                 _                           => runKey.Model,
             };
-            var toolUseSupported = !isCopilot && !isOllama;
+            var toolUseSupported = !isOpenAI && !isCopilot && !isOllama;
             var sectionLabel = runKey.Feature == "review"
                 ? $"Review - {runKey.TabLabel(modelLabel, toolUseSupported)}"
                 : $"Context - {runKey.TabLabel(modelLabel, toolUseSupported)}";
