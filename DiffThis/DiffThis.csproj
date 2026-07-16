@@ -26,7 +26,7 @@
          4th (revision) component of the MSIX package version, and the Store
          rejects any package whose revision is non-zero. -->
     <ApplicationVersion>0</ApplicationVersion>
-    <ApplicationDisplayVersion>1.7.0</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>1.8.0</ApplicationDisplayVersion>
     <Platforms>Windows</Platforms>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
