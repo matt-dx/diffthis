@@ -1,6 +1,6 @@
 ---
 name: store-assets
-description: Generates Microsoft Store (Partner Center) screenshots and icon PNGs for the DiffThis app. Produces icon-*.png files at required sizes and screenshot-*.png files for every page/panel, all using DiffThis's own repo diff data. Output goes to /.store-assets/.
+description: Generates Microsoft Store (Partner Center) screenshots and icon PNGs for the DiffThis app. Produces icon-*.png files at required sizes and screenshot-*.png files for every page/panel, all using DiffThis's own repo diff data. Output goes to C:\dev\_\diffthis\.store-assets\.
 ---
 
 # DiffThis Store Assets Generator

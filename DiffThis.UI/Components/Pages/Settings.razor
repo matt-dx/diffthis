@@ -998,27 +998,39 @@
     {
         _openAiBusy = true;
         StateHasChanged();
-        await OpenAiAuth.TryInteractiveLoginAsync();
-        if (OpenAiAuth.State == OpenAiAuthState.Authenticated)
-            await OpenAiModelService.RefreshAsync();
-        _openAiBusy = false;
-        StateHasChanged();
+        try
+        {
+            await OpenAiAuth.TryInteractiveLoginAsync();
+            if (OpenAiAuth.State == OpenAiAuthState.Authenticated)
+                await OpenAiModelService.RefreshAsync();
+        }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task RefreshOpenAiAuth()
     {
         _openAiBusy = true;
-        await OpenAiAuth.RefreshAsync();
-        _openAiBusy = false;
-        StateHasChanged();
+        try { await OpenAiAuth.RefreshAsync(); }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task OpenAiSignOut()
     {
         _openAiBusy = true;
-        await OpenAiAuth.SignOutAsync();
-        _openAiBusy = false;
-        StateHasChanged();
+        try { await OpenAiAuth.SignOutAsync(); }
+        finally
+        {
+            _openAiBusy = false;
+            StateHasChanged();
+        }
     }
 
     private void CancelCopilotSignIn()

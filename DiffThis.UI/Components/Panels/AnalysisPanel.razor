@@ -508,10 +508,14 @@ else
         catch (UnauthorizedAccessException ex)
         {
             AiCache.FailRun(key, ex.Message);
-            if (IsOpenAI(key.Model))
-                await OpenAiAuth.RefreshAsync();
-            else if (!IsCopilot(key.Model) && !IsOllama(key.Model))
-                ClaudeAuth.Reload();
+            try
+            {
+                if (IsOpenAI(key.Model))
+                    await OpenAiAuth.RefreshAsync();
+                else if (!IsCopilot(key.Model) && !IsOllama(key.Model))
+                    ClaudeAuth.Reload();
+            }
+            catch { /* run is already marked failed — this is a best-effort auth-state refresh */ }
         }
         catch (Exception ex)
         {
