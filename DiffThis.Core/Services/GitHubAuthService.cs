@@ -6,14 +6,16 @@ namespace DiffThis.Core.Services;
 /// Authenticates with GitHub via the standard OAuth Device Flow, so pull requests can be
 /// browsed without ever requiring the user to open a terminal.
 ///
-/// Device Flow needs no client secret, but it does need a <c>client_id</c>, which the user
-/// supplies via Settings after registering a free OAuth App of their own
-/// (github.com/settings/developers → New OAuth App → enable "Device Flow"). DiffThis never
-/// ships or reuses another application's client ID for this, since that would show up on the
-/// user's GitHub authorized-apps page under a different app's name.
+/// Device Flow needs no client secret, but it does need a <c>client_id</c>. DiffThis ships
+/// with its own registered OAuth App's Client ID (public by design — the same way the `gh`
+/// CLI's or VS Code's client IDs are public) so sign-in works out of the box; Settings still
+/// lets a user override it with their own App's Client ID if they'd rather DiffThis show up
+/// under a different name on their GitHub authorized-apps page.
 /// </summary>
 public class GitHubAuthService : IGitHubAuthService
 {
+    private const string DefaultClientId = "Ov23liEw5usMhTBqUdqX";
+
     private const string OAuthTokenKey = "github_oauth_token";
     private const string UsernameKey   = "github_username";
 
@@ -57,12 +59,7 @@ public class GitHubAuthService : IGitHubAuthService
         _pollCts = null;
 
         var clientId = _settings.GitHubOAuthClientId.Trim();
-        if (string.IsNullOrEmpty(clientId))
-        {
-            LastError = "Add a GitHub OAuth App Client ID above first.";
-            StateChanged?.Invoke();
-            return null;
-        }
+        if (string.IsNullOrEmpty(clientId)) clientId = DefaultClientId;
 
         try
         {

@@ -275,18 +275,17 @@
         <div class="setting-card">
             <div class="setting-row">
                 <div>
-                    <p class="setting-label">OAuth App Client ID</p>
+                    <p class="setting-label">OAuth App Client ID <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
                     <p class="setting-desc">
-                        Browsing pull requests needs a free GitHub OAuth App of your own, with
-                        "Device Flow" enabled — DiffThis never ships one for you, since that would
-                        show up under a different app's name on your GitHub account.
-                        <a href="https://github.com/settings/applications/new" target="_blank">Create one ↗</a>,
-                        then paste its Client ID below (no client secret needed).
+                        Sign-in works out of the box using DiffThis's own GitHub OAuth App. If you'd
+                        rather DiffThis show up under a different app's name on your GitHub account,
+                        <a href="https://github.com/settings/applications/new" target="_blank">create your own OAuth App ↗</a>
+                        (enable "Device Flow") and paste its Client ID below (no client secret needed).
                     </p>
                 </div>
             </div>
             <div class="setting-row">
-                <input type="text" class="setting-text-input" placeholder="Iv1.xxxxxxxxxxxxxxxx"
+                <input type="text" class="setting-text-input" placeholder="Iv1.xxxxxxxxxxxxxxxx (leave blank to use the default)"
                        value="@Svc.GitHubOAuthClientId"
                        @onchange="e => Svc.GitHubOAuthClientId = e.Value?.ToString() ?? string.Empty" />
             </div>
@@ -354,17 +353,18 @@
         <div class="setting-card">
             <div class="setting-row">
                 <div>
-                    <p class="setting-label">Application ID</p>
+                    <p class="setting-label">Application ID <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
                     <p class="setting-desc">
-                        Needs a free GitLab Application of your own (no redirect URI or secret needed
-                        for device sign-in).
-                        <a href="https://gitlab.com/-/user_settings/applications" target="_blank">Create one ↗</a>,
-                        then paste its Application ID below.
+                        Sign-in works out of the box using DiffThis's own GitLab Application. If you'd
+                        rather DiffThis show up under a different application's name on your GitLab
+                        account, <a href="https://gitlab.com/-/user_settings/applications" target="_blank">create your own ↗</a>
+                        (scope: <code>read_api</code>, with "Device authorization grant" enabled and
+                        "Confidential" unchecked) and paste its Application ID below.
                     </p>
                 </div>
             </div>
             <div class="setting-row">
-                <input type="text" class="setting-text-input" placeholder="Application ID"
+                <input type="text" class="setting-text-input" placeholder="Application ID (leave blank to use the default)"
                        value="@Svc.GitLabOAuthClientId"
                        @onchange="e => Svc.GitLabOAuthClientId = e.Value?.ToString() ?? string.Empty" />
             </div>

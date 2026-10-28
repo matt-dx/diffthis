@@ -3,12 +3,15 @@ using System.Text.Json;
 namespace DiffThis.Core.Services;
 
 /// <summary>
-/// Authenticates with GitLab.com via the standard OAuth Device Flow, using an "Application"
-/// the user registers themselves (gitlab.com/-/user_settings/applications — no redirect URI or
-/// secret needed for device flow). Mirrors <see cref="GitHubAuthService"/>.
+/// Authenticates with GitLab.com via the standard OAuth Device Flow. DiffThis ships with its
+/// own registered Application's ID (public by design, like GitHub's) so sign-in works out of
+/// the box; Settings still lets a user override it with their own Application's ID. Mirrors
+/// <see cref="GitHubAuthService"/>.
 /// </summary>
 public class GitLabAuthService : IGitLabAuthService
 {
+    private const string DefaultClientId = "23be9dfb929aab1c9f4075bf14cceaa174c3459ff79a7f6b112401a8d370ea69";
+
     private const string OAuthTokenKey = "gitlab_oauth_token";
     private const string UsernameKey   = "gitlab_username";
 
@@ -50,12 +53,7 @@ public class GitLabAuthService : IGitLabAuthService
         _pollCts = null;
 
         var clientId = _settings.GitLabOAuthClientId.Trim();
-        if (string.IsNullOrEmpty(clientId))
-        {
-            LastError = "Add a GitLab Application ID above first.";
-            StateChanged?.Invoke();
-            return null;
-        }
+        if (string.IsNullOrEmpty(clientId)) clientId = DefaultClientId;
 
         try
         {

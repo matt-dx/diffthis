@@ -576,27 +576,14 @@
             return;
         }
 
-        ShowSignInModal(_prProvider);
+        ShowSignInModal();
         await InvokeAsync(StateHasChanged);
     }
 
-    private void ShowSignInModal(PullRequestProviderInfo provider)
+    private void ShowSignInModal()
     {
-        if (provider.Kind == GitProviderKind.GitHub && string.IsNullOrWhiteSpace(Settings.GitHubOAuthClientId))
-        {
-            _signInIsOption = false;
-            _signInExplain  = "Add a GitHub OAuth App Client ID under Settings first, then come back and sign in.";
-        }
-        else if (provider.Kind == GitProviderKind.GitLab && string.IsNullOrWhiteSpace(Settings.GitLabOAuthClientId))
-        {
-            _signInIsOption = false;
-            _signInExplain  = "Add a GitLab Application ID under Settings first, then come back and sign in.";
-        }
-        else
-        {
-            _signInIsOption  = true;
-            _selfHostedToken = "";
-        }
+        _signInIsOption  = true;
+        _selfHostedToken = "";
         _showSignInModal = true;
     }
 
