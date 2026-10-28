@@ -17,6 +17,10 @@ public class SettingsService : ISettingsService
     private const string DiffContextLinesKey      = "diff_context_lines";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
     private const string CopilotTimeoutKey        = "copilot_timeout_seconds";
+    private const string GitHubClientIdKey        = "github_oauth_client_id";
+    private const string GitLabClientIdKey        = "gitlab_oauth_client_id";
+    private const string BitbucketUsernameKey     = "bitbucket_username";
+    private const string GitHostsKey              = "git_hosts";
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string AiLoggingKey            = "ai_logging_enabled";
@@ -141,6 +145,30 @@ public class SettingsService : ISettingsService
             return v <= 0 ? null : v;
         }
         set => Preferences.Set(CopilotTimeoutKey, value is { } secs && secs > 0 ? secs : 0);
+    }
+
+    public string GitHubOAuthClientId
+    {
+        get => Preferences.Get(GitHubClientIdKey, "");
+        set => Preferences.Set(GitHubClientIdKey, value);
+    }
+
+    public string GitLabOAuthClientId
+    {
+        get => Preferences.Get(GitLabClientIdKey, "");
+        set => Preferences.Set(GitLabClientIdKey, value);
+    }
+
+    public string BitbucketUsername
+    {
+        get => Preferences.Get(BitbucketUsernameKey, "");
+        set => Preferences.Set(BitbucketUsernameKey, value);
+    }
+
+    public string GitHostsJson
+    {
+        get => Preferences.Get(GitHostsKey, "[]");
+        set => Preferences.Set(GitHostsKey, value);
     }
 
     public string OllamaEndpointsJson

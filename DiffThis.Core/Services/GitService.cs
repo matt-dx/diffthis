@@ -132,6 +132,21 @@ public class GitService : IGitService
         };
     }
 
+    public async Task<string> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, CancellationToken ct = default)
+    {
+        var result = await RunGitAsync(repositoryPath,
+            ["fetch", "origin",
+             $"{remoteRef}:refs/remotes/{localRef}",
+             $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException(
+                result.StandardError.Trim() is { Length: > 0 } err ? err
+                : $"git fetch exited with code {result.ExitCode}");
+
+        return localRef;
+    }
+
     public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)
     {
         contextLines = Math.Clamp(contextLines, 0, 100_000);

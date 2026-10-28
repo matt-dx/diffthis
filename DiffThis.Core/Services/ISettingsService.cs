@@ -29,6 +29,18 @@ public interface ISettingsService
     // ── GitHub Copilot ─────────────────────────────────────────────────────
     int? CopilotTimeoutSeconds { get; set; }  // null = no timeout (default: 300)
 
+    // ── GitHub (pull requests) ────────────────────────────────────────────
+    string GitHubOAuthClientId { get; set; }  // user-registered OAuth App client ID (Device Flow enabled); default ""
+
+    // ── GitLab (pull requests) ─────────────────────────────────────────────
+    string GitLabOAuthClientId { get; set; }  // user-registered Application ID (Device Flow is implicit); default ""
+
+    // ── Bitbucket Cloud (pull requests) ────────────────────────────────────
+    string BitbucketUsername { get; set; }  // Atlassian account email used with the API token; default ""
+
+    // ── Self-hosted git hosts (pull requests) ──────────────────────────────
+    string GitHostsJson { get; set; }  // JSON-serialised List<GitHostConfig>
+
     // ── Ollama endpoints ───────────────────────────────────────────────────
     string OllamaEndpointsJson { get; set; }  // JSON-serialised List<PersistedEndpoint>
 
