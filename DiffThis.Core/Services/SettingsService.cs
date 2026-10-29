@@ -20,6 +20,9 @@ public class SettingsService : ISettingsService
     private const string GitHubClientIdKey        = "github_oauth_client_id";
     private const string GitLabClientIdKey        = "gitlab_oauth_client_id";
     private const string BitbucketUsernameKey     = "bitbucket_username";
+    private const string BitbucketOAuthClientIdKey     = "bitbucket_oauth_client_id";
+    private const string BitbucketOAuthClientSecretKey = "bitbucket_oauth_client_secret";
+    private const string AzureDevOpsClientIdKey        = "azuredevops_oauth_client_id";
     private const string GitHostsKey              = "git_hosts";
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
@@ -163,6 +166,24 @@ public class SettingsService : ISettingsService
     {
         get => Preferences.Get(BitbucketUsernameKey, "");
         set => Preferences.Set(BitbucketUsernameKey, value);
+    }
+
+    public string BitbucketOAuthClientId
+    {
+        get => Preferences.Get(BitbucketOAuthClientIdKey, "");
+        set => Preferences.Set(BitbucketOAuthClientIdKey, value);
+    }
+
+    public string BitbucketOAuthClientSecret
+    {
+        get => Preferences.Get(BitbucketOAuthClientSecretKey, "");
+        set => Preferences.Set(BitbucketOAuthClientSecretKey, value);
+    }
+
+    public string AzureDevOpsOAuthClientId
+    {
+        get => Preferences.Get(AzureDevOpsClientIdKey, "");
+        set => Preferences.Set(AzureDevOpsClientIdKey, value);
     }
 
     public string GitHostsJson

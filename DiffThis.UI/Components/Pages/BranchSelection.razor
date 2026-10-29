@@ -9,6 +9,7 @@
 @inject ISettingsService Settings
 @inject DiffSessionService Session
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="settings-view">
 <div class="settings-header">
@@ -67,7 +68,9 @@
                     <div class="pr-list">
                         @foreach (var pr in prs)
                         {
-                            <div class="pr-item @(selectedPr?.Number == pr.Number ? "pr-item-selected" : "")" @onclick="() => SelectPr(pr)">
+                            var isActive = selectedPr?.Number == pr.Number;
+                            <div class="pr-item @(isActive ? "pr-item-selected" : "") @(isActive && comparing ? "pr-item-loading" : "")"
+                                 @onclick="() => SelectAndComparePullRequest(pr)">
                                 <div class="pr-item-main">
                                     <span class="pr-number">#@pr.Number</span>
                                     <span class="pr-title">@pr.Title</span>
@@ -79,8 +82,14 @@
                                     {
                                         <span class="pr-badge pr-badge-merged">Merged</span>
                                     }
+                                    @if (pr.SourceAvailability == PullRequestSourceAvailability.Unknown)
+                                    {
+                                        <span class="pr-badge pr-badge-unavailable" title="Its source branch may have been deleted with no merge commit to fall back to — comparing it might fail.">May be unavailable</span>
+                                    }
                                 </div>
-                                <div class="pr-item-meta">@pr.HeadRefName → @pr.BaseRefName · @pr.Author · @pr.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                                <div class="pr-item-meta">
+                                    @(isActive && comparing ? "Computing diff…" : $"{pr.HeadRefName} → {pr.BaseRefName} · {pr.Author} · {pr.UpdatedAt.ToLocalTime():MMM d, yyyy}")
+                                </div>
                             </div>
                         }
                     </div>
@@ -91,12 +100,6 @@
             {
                 <div class="error-banner">@compareError</div>
             }
-
-            <button class="btn btn-primary btn-compare"
-                    disabled="@(selectedPr is null || comparing)"
-                    @onclick="ComparePullRequest">
-                @(comparing ? "Computing diff…" : "Compare →")
-            </button>
         }
         else
         {
@@ -205,9 +208,13 @@
                     <p class="modal-body">Enter this code at <strong>github.com/login/device</strong></p>
                     <div class="device-flow-card">
                         <div class="device-flow-code-row">
-                            <code class="device-flow-code">@_ghDeviceFlow.UserCode</code>
+                            <code class="device-flow-code" title="Click to copy" @onclick="() => CopyDeviceCode(_ghDeviceFlow.UserCode)" @onclick:stopPropagation>@_ghDeviceFlow.UserCode</code>
                             <a class="btn btn-sm" href="@_ghDeviceFlow.VerificationUri" target="_blank">Open GitHub ↗</a>
                         </div>
+                        @if (_codeCopied)
+                        {
+                            <div class="copy-toast">Copied to clipboard</div>
+                        }
                     </div>
                     <div class="modal-actions">
                         <button class="btn btn-sm" @onclick="CancelInlineGitHubSignIn">Cancel</button>
@@ -236,9 +243,13 @@
                     <p class="modal-body">Enter this code at <strong>gitlab.com/login/device</strong></p>
                     <div class="device-flow-card">
                         <div class="device-flow-code-row">
-                            <code class="device-flow-code">@_glDeviceFlow.UserCode</code>
+                            <code class="device-flow-code" title="Click to copy" @onclick="() => CopyDeviceCode(_glDeviceFlow.UserCode)" @onclick:stopPropagation>@_glDeviceFlow.UserCode</code>
                             <a class="btn btn-sm" href="@_glDeviceFlow.VerificationUri" target="_blank">Open GitLab ↗</a>
                         </div>
+                        @if (_codeCopied)
+                        {
+                            <div class="copy-toast">Copied to clipboard</div>
+                        }
                     </div>
                     <div class="modal-actions">
                         <button class="btn btn-sm" @onclick="CancelInlineGitLabSignIn">Cancel</button>
@@ -262,49 +273,99 @@
             else if (_prProvider.Kind == GitProviderKind.BitbucketCloud)
             {
                 <p class="modal-title">Sign in to Bitbucket</p>
-                <p class="modal-body">
-                    Bitbucket Cloud has no device sign-in — App Passwords are retired, so connect with an
-                    <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">API token ↗</a>
-                    (choose "Bitbucket" as the app, with read access to repositories and pull requests).
-                </p>
-                <input type="text" class="setting-text-input" placeholder="Atlassian account email" @bind="_bbUsername" />
-                <div class="password-field">
-                    <input type="@(_bbTokenVisible ? "text" : "password")" class="setting-text-input" placeholder="API token" @bind="_bbAppPassword" />
-                    <button type="button" class="password-toggle" title="@(_bbTokenVisible ? "Hide" : "Show")" @onclick="() => _bbTokenVisible = !_bbTokenVisible">@(_bbTokenVisible ? "🙈" : "👁")</button>
-                </div>
-                @if (!string.IsNullOrEmpty(BitbucketAuth.LastError))
+                @if (!_bbUseToken)
                 {
-                    <p class="modal-body" style="color:var(--del-fg)">@BitbucketAuth.LastError</p>
+                    <p class="modal-body">Opens Bitbucket's own sign-in page in your browser — no copying tokens around.</p>
+                    @if (!string.IsNullOrEmpty(BitbucketAuth.LastError))
+                    {
+                        <p class="modal-body" style="color:var(--del-fg)">@BitbucketAuth.LastError</p>
+                    }
+                    <div class="modal-actions" style="justify-content:space-between">
+                        <button class="btn btn-sm" @onclick="() => _bbUseToken = true">Use an API token instead</button>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
+                            <button class="btn btn-sm btn-primary" disabled="@_bbSigningIn" @onclick="StartInlineBitbucketBrowserSignIn">
+                                @(_bbSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                            </button>
+                        </div>
+                    </div>
                 }
-                <div class="modal-actions">
-                    <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
-                    <button class="btn btn-sm btn-primary" disabled="@_bbSigningIn" @onclick="StartInlineBitbucketSignIn">
-                        @(_bbSigningIn ? "Connecting…" : "Connect")
-                    </button>
-                </div>
+                else
+                {
+                    <p class="modal-body">
+                        App Passwords are retired, so connect with an
+                        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">API token ↗</a>
+                        (choose "Bitbucket" as the app, with read access to repositories and pull requests).
+                    </p>
+                    <input type="text" class="setting-text-input" placeholder="Atlassian account email" @bind="_bbUsername" />
+                    <div class="password-field">
+                        <input type="@(_bbTokenVisible ? "text" : "password")" class="setting-text-input" placeholder="API token" @bind="_bbAppPassword" />
+                        <button type="button" class="password-toggle" title="@(_bbTokenVisible ? "Hide" : "Show")" @onclick="() => _bbTokenVisible = !_bbTokenVisible">@(_bbTokenVisible ? "🙈" : "👁")</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(BitbucketAuth.LastError))
+                    {
+                        <p class="modal-body" style="color:var(--del-fg)">@BitbucketAuth.LastError</p>
+                    }
+                    <div class="modal-actions" style="justify-content:space-between">
+                        <button class="btn btn-sm" @onclick="() => _bbUseToken = false">← Back</button>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
+                            <button class="btn btn-sm btn-primary" disabled="@_bbSigningIn" @onclick="StartInlineBitbucketSignIn">
+                                @(_bbSigningIn ? "Connecting…" : "Connect")
+                            </button>
+                        </div>
+                    </div>
+                }
             }
             else if (_prProvider.Kind == GitProviderKind.AzureDevOps)
             {
                 <p class="modal-title">Sign in to Azure DevOps</p>
-                <p class="modal-body">
-                    Azure DevOps has no device sign-in — connect with a
-                    <a href="https://dev.azure.com/_usersSettings/tokens" target="_blank">Personal Access Token ↗</a>
-                    (scope: Code → Read).
-                </p>
-                <div class="password-field">
-                    <input type="@(_adoPatVisible ? "text" : "password")" class="setting-text-input" placeholder="Personal Access Token" @bind="_adoPat" />
-                    <button type="button" class="password-toggle" title="@(_adoPatVisible ? "Hide" : "Show")" @onclick="() => _adoPatVisible = !_adoPatVisible">@(_adoPatVisible ? "🙈" : "👁")</button>
-                </div>
-                @if (!string.IsNullOrEmpty(AzureDevOpsAuth.LastError))
+                @if (!_adoUseToken)
                 {
-                    <p class="modal-body" style="color:var(--del-fg)">@AzureDevOpsAuth.LastError</p>
+                    <p class="modal-body">
+                        Opens a Microsoft sign-in page in your browser. Only works for organizations backed by a
+                        Microsoft Entra (work/school) account — use a Personal Access Token instead for a personal
+                        Microsoft account.
+                    </p>
+                    @if (!string.IsNullOrEmpty(AzureDevOpsAuth.LastError))
+                    {
+                        <p class="modal-body" style="color:var(--del-fg)">@AzureDevOpsAuth.LastError</p>
+                    }
+                    <div class="modal-actions" style="justify-content:space-between">
+                        <button class="btn btn-sm" @onclick="() => _adoUseToken = true">Use a token instead</button>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
+                            <button class="btn btn-sm btn-primary" disabled="@_adoSigningIn" @onclick="StartInlineAzureDevOpsBrowserSignIn">
+                                @(_adoSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                            </button>
+                        </div>
+                    </div>
                 }
-                <div class="modal-actions">
-                    <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
-                    <button class="btn btn-sm btn-primary" disabled="@_adoSigningIn" @onclick="StartInlineAzureDevOpsSignIn">
-                        @(_adoSigningIn ? "Connecting…" : "Connect")
-                    </button>
-                </div>
+                else
+                {
+                    <p class="modal-body">
+                        Connect with a
+                        <a href="https://dev.azure.com/_usersSettings/tokens" target="_blank">Personal Access Token ↗</a>
+                        (scope: Code → Read).
+                    </p>
+                    <div class="password-field">
+                        <input type="@(_adoPatVisible ? "text" : "password")" class="setting-text-input" placeholder="Personal Access Token" @bind="_adoPat" />
+                        <button type="button" class="password-toggle" title="@(_adoPatVisible ? "Hide" : "Show")" @onclick="() => _adoPatVisible = !_adoPatVisible">@(_adoPatVisible ? "🙈" : "👁")</button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(AzureDevOpsAuth.LastError))
+                    {
+                        <p class="modal-body" style="color:var(--del-fg)">@AzureDevOpsAuth.LastError</p>
+                    }
+                    <div class="modal-actions" style="justify-content:space-between">
+                        <button class="btn btn-sm" @onclick="() => _adoUseToken = false">← Back</button>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-sm" @onclick="CloseSignInModal">Cancel</button>
+                            <button class="btn btn-sm btn-primary" disabled="@_adoSigningIn" @onclick="StartInlineAzureDevOpsSignIn">
+                                @(_adoSigningIn ? "Connecting…" : "Connect")
+                            </button>
+                        </div>
+                    </div>
+                }
             }
             else
             {
@@ -370,11 +431,14 @@
     private GitHubDeviceFlowInfo? _ghDeviceFlow;
     private bool   _glSigningIn;
     private GitLabDeviceFlowInfo? _glDeviceFlow;
+    private bool   _codeCopied; // transient "Copied to clipboard" toast for the device-flow code
     private bool   _bbSigningIn;
+    private bool   _bbUseToken; // false => "Sign in with browser" (default); true => paste an API token instead
     private string _bbUsername = "";
     private string _bbAppPassword = "";
     private bool   _bbTokenVisible;
     private bool   _adoSigningIn;
+    private bool   _adoUseToken; // false => "Sign in with browser" (default); true => paste a PAT instead
     private string _adoPat = "";
     private bool   _adoPatVisible;
     private bool   _selfHostedSavingToken;
@@ -420,6 +484,8 @@
             branches = await GitService.GetBranchesAsync(RepoPath);
 
             var saved = Settings.GetBranchState(RepoPath);
+            if (saved?.UsePullRequests == true) mode = SelectionMode.PullRequests;
+
             if (saved is not null
                 && branches.Contains(saved.BaseBranch)
                 && branches.Contains(saved.CompareBranch))
@@ -454,6 +520,8 @@
         finally { loading = false; }
 
         _ = FetchAndRefreshBranchesAsync();
+        if (mode == SelectionMode.PullRequests)
+            _ = EnsurePullRequestsReadyAsync(prState);
     }
 
     private async Task FetchAndRefreshBranchesAsync()
@@ -491,6 +559,8 @@
     {
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
+        _copyToastCts?.Cancel();
+        _copyToastCts?.Dispose();
         GitHubAuth.StateChanged -= OnGitHubAuthChanged;
         GitLabAuth.StateChanged -= OnGitLabAuthChanged;
     }
@@ -524,8 +594,19 @@
         if (mode == newMode) return;
         mode = newMode;
         compareError = "";
+        SavePullRequestModePreference();
         if (mode == SelectionMode.PullRequests)
             _ = EnsurePullRequestsReadyAsync(prState);
+    }
+
+    /// Remembers whether this repo was last left on the Branches or Pull Requests tab, without
+    /// disturbing any already-saved branch/commit selections.
+    private void SavePullRequestModePreference()
+    {
+        if (string.IsNullOrEmpty(RepoPath)) return;
+        var state = Settings.GetBranchState(RepoPath) ?? new BranchSelectionState();
+        state.UsePullRequests = mode == SelectionMode.PullRequests;
+        Settings.SaveBranchState(RepoPath, state);
     }
 
     private void SwitchPrState(PullRequestState newState)
@@ -584,6 +665,8 @@
     {
         _signInIsOption  = true;
         _selfHostedToken = "";
+        _bbUseToken      = false;
+        _adoUseToken     = false;
         _showSignInModal = true;
     }
 
@@ -592,6 +675,8 @@
         _showSignInModal = false;
         _ghDeviceFlow = null;
         _glDeviceFlow = null;
+        _codeCopied = false;
+        _copyToastCts?.Cancel();
     }
 
     private async Task StartInlineGitHubSignIn()
@@ -638,11 +723,39 @@
         else StateHasChanged();
     }
 
+    private async Task StartInlineBitbucketBrowserSignIn()
+    {
+        _bbSigningIn = true;
+        StateHasChanged();
+        var ok = await BitbucketAuth.SignInWithBrowserAsync();
+        _bbSigningIn = false;
+        if (ok)
+        {
+            CloseSignInModal();
+            await LoadPullRequestsAsync(prState);
+        }
+        else StateHasChanged();
+    }
+
     private async Task StartInlineAzureDevOpsSignIn()
     {
         _adoSigningIn = true;
         StateHasChanged();
         var ok = await AzureDevOpsAuth.SignInAsync(_adoPat);
+        _adoSigningIn = false;
+        if (ok)
+        {
+            CloseSignInModal();
+            await LoadPullRequestsAsync(prState);
+        }
+        else StateHasChanged();
+    }
+
+    private async Task StartInlineAzureDevOpsBrowserSignIn()
+    {
+        _adoSigningIn = true;
+        StateHasChanged();
+        var ok = await AzureDevOpsAuth.SignInWithBrowserAsync();
         _adoSigningIn = false;
         if (ok)
         {
@@ -677,13 +790,13 @@
         catch (Exception ex) { prError = ex.Message; }
         finally { prsLoading = false; }
 
-        // An auth problem slipped through the upfront check (e.g. a token was revoked mid-session) —
-        // explain it and offer Settings rather than leaving an error banner with nothing actionable.
+        // An auth problem slipped through the upfront check (e.g. a token was revoked or a refresh
+        // failed mid-session). _prProvider is already known at this point, so offer the same inline
+        // sign-in (browser flow / device flow / token paste) used upfront, instead of bouncing the
+        // user out to Settings.
         if (IsAuthError(prError))
         {
-            _signInIsOption  = false;
-            _signInExplain   = prError;
-            _showSignInModal = true;
+            ShowSignInModal();
             prError = "";
         }
 
@@ -695,33 +808,53 @@
         message.Contains("rejected the stored credentials", StringComparison.OrdinalIgnoreCase) ||
         message.Contains("No token saved", StringComparison.OrdinalIgnoreCase);
 
-    private void SelectPr(PullRequestInfo pr)
+    /// Selecting a PR card launches its compare immediately — there's no separate "Compare" button
+    /// to scroll down and click for pull requests.
+    private async Task SelectAndComparePullRequest(PullRequestInfo pr)
     {
-        selectedPr = pr;
+        if (comparing || RepoPath is null) return;
+        selectedPr   = pr;
         compareError = "";
-    }
-
-    private async Task ComparePullRequest()
-    {
-        if (selectedPr is null || comparing || RepoPath is null) return;
         comparing    = true;
-        compareError = "";
+        StateHasChanged();
         try
         {
-            var pr = selectedPr;
             var localRef   = $"pr/{pr.Provider}/{pr.Number}";
-            var compareRef = await GitService.FetchPullRequestRefAsync(RepoPath, pr.SourceRemoteRef, localRef, pr.BaseRefName);
-            var baseRef    = $"origin/{pr.BaseRefName}";
+            var resolution = await GitService.FetchPullRequestRefAsync(RepoPath, pr.SourceRemoteRef, localRef, pr.BaseRefName, pr.MergeCommitSha);
+            var baseRef    = resolution.BaseRefOverride ?? $"origin/{pr.BaseRefName}";
 
-            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, compareRef, contextLines: Settings.DiffContextLines);
-            Session.CurrentDiff.BaseLabel    = pr.BaseRefName;
-            Session.CurrentDiff.CompareLabel = $"PR #{pr.Number}: {pr.HeadRefName}";
+            Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, resolution.CompareRef, contextLines: Settings.DiffContextLines);
+            Session.CurrentDiff.BaseLabel    = resolution.BaseRefOverride is null ? pr.BaseRefName : $"{pr.BaseRefName} (pre-merge)";
+            Session.CurrentDiff.CompareLabel = resolution.BaseRefOverride is null
+                ? $"PR #{pr.Number}: {pr.HeadRefName}"
+                : $"PR #{pr.Number}: {pr.HeadRefName} (reconstructed from merge commit)";
 
             Nav.NavigateTo("/diff");
-            return; // leave comparing=true so button stays "Computing diff…" until unmounted
+            return; // leave comparing=true so the clicked card stays "Computing diff…" until unmounted
         }
         catch (Exception ex) { compareError = ex.Message; }
         comparing = false;
+    }
+
+    private CancellationTokenSource? _copyToastCts;
+
+    private async Task CopyDeviceCode(string code)
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", code);
+
+        _copyToastCts?.Cancel();
+        _copyToastCts = new CancellationTokenSource();
+        var ct = _copyToastCts.Token;
+
+        _codeCopied = true;
+        StateHasChanged();
+        try
+        {
+            await Task.Delay(1500, ct);
+            _codeCopied = false;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task OnBaseBranchChanged()

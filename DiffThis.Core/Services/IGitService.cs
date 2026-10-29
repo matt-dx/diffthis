@@ -13,7 +13,11 @@ public interface IGitService
 
     /// Fetches an arbitrary remote ref (e.g. "refs/pull/9/head", "refs/merge-requests/9/head",
     /// "refs/pull-requests/9/from", or a plain branch ref) into <paramref name="localRef"/>, along
-    /// with the base branch, so both sides are available for a diff. The base side to use is
-    /// "origin/{baseRefName}". Returns <paramref name="localRef"/> on success.
-    Task<string> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, CancellationToken ct = default);
+    /// with the base branch, so both sides are available for a diff. On success the result's
+    /// CompareRef is normally <paramref name="localRef"/>, diffed against "origin/{baseRefName}".
+    /// If the source ref is gone (e.g. a squash merge deleted the branch) and
+    /// <paramref name="mergeCommitSha"/> is supplied and still reachable, the result instead points
+    /// at that merge commit with a BaseRefOverride of its own parent — diffing those two reproduces
+    /// the same file changes without needing the original source commits at all.
+    Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, CancellationToken ct = default);
 }

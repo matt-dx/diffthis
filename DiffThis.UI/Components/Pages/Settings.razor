@@ -432,6 +432,27 @@
         <div class="setting-card">
             <div class="setting-row">
                 <div>
+                    <p class="setting-label">OAuth Client <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Browser sign-in works out of the box using DiffThis's own Bitbucket OAuth client. To use
+                        your own instead, in your Bitbucket workspace's settings under "Apps and features" → OAuth
+                        clients → Create OAuth client: name it anything, under Authorization check "Authorization
+                        code" with callback URL <code>http://localhost:51738/callback</code>, and under Scopes
+                        check "Repositories: Read" and "Pull requests: Read". Then paste its Client ID and Secret below.
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row" style="gap:8px">
+                <input type="text" class="setting-text-input" placeholder="Client ID (leave blank to use the default)" style="margin-top:0"
+                       value="@Svc.BitbucketOAuthClientId"
+                       @onchange="e => Svc.BitbucketOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+                <input type="password" class="setting-text-input" placeholder="Secret (leave blank to use the default)" style="margin-top:0"
+                       value="@Svc.BitbucketOAuthClientSecret"
+                       @onchange="e => Svc.BitbucketOAuthClientSecret = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
                     <p class="setting-label">Account</p>
                     @if (BitbucketAuth.State == BitbucketAuthState.Authenticated)
                     {
@@ -448,9 +469,7 @@
                     {
                         <p class="setting-desc">
                             <span class="auth-dot auth-off"></span>
-                            Bitbucket Cloud has no device sign-in — App Passwords are retired, so connect with an
-                            <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">API token ↗</a>
-                            instead (choose "Bitbucket" as the app, and grant it read access to repositories and pull requests).
+                            Not connected — sign in with a browser, or use an API token (App Passwords are retired).
                         </p>
                         @if (!string.IsNullOrEmpty(BitbucketAuth.LastError))
                         {
@@ -461,6 +480,12 @@
                 @if (BitbucketAuth.State == BitbucketAuthState.Authenticated)
                 {
                     <button class="btn btn-sm btn-danger" @onclick="BitbucketSignOut">Sign out</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm" disabled="@_bitbucketOAuthSigningIn" @onclick="StartBitbucketBrowserSignIn" style="flex-shrink:0">
+                        @(_bitbucketOAuthSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                    </button>
                 }
             </div>
             @if (BitbucketAuth.State != BitbucketAuthState.Authenticated)
@@ -483,6 +508,26 @@
         <div class="setting-card">
             <div class="setting-row">
                 <div>
+                    <p class="setting-label">Microsoft Entra App <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Browser sign-in works out of the box using DiffThis's own Entra app registration. To use
+                        your own, register one in the
+                        <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Entra admin center ↗</a>
+                        (platform "Mobile and desktop applications", redirect URI <code>http://localhost</code>,
+                        "Allow public client flows" enabled, with Azure DevOps' <code>user_impersonation</code>
+                        delegated permission), then paste its Application (client) ID below. Only works for
+                        organizations backed by a Microsoft Entra (work/school) account, not a personal Microsoft account.
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row">
+                <input type="text" class="setting-text-input" placeholder="Application (client) ID (leave blank to use the default)"
+                       value="@Svc.AzureDevOpsOAuthClientId"
+                       @onchange="e => Svc.AzureDevOpsOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
                     <p class="setting-label">Account</p>
                     @if (AzureDevOpsAuth.State == AzureDevOpsAuthState.Authenticated)
                     {
@@ -499,9 +544,7 @@
                     {
                         <p class="setting-desc">
                             <span class="auth-dot auth-off"></span>
-                            Azure DevOps has no device sign-in — connect with a
-                            <a href="https://dev.azure.com/_usersSettings/tokens" target="_blank">Personal Access Token ↗</a>
-                            instead (scope: Code → Read).
+                            Not connected — sign in with a browser, or use a Personal Access Token.
                         </p>
                         @if (!string.IsNullOrEmpty(AzureDevOpsAuth.LastError))
                         {
@@ -512,6 +555,12 @@
                 @if (AzureDevOpsAuth.State == AzureDevOpsAuthState.Authenticated)
                 {
                     <button class="btn btn-sm btn-danger" @onclick="AzureDevOpsSignOut">Sign out</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm" disabled="@_azureDevOpsOAuthSigningIn" @onclick="StartAzureDevOpsBrowserSignIn" style="flex-shrink:0">
+                        @(_azureDevOpsOAuthSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                    </button>
                 }
             </div>
             @if (AzureDevOpsAuth.State != AzureDevOpsAuthState.Authenticated)
@@ -1135,9 +1184,11 @@
     private bool           _gitLabSigningIn;
     private GitLabDeviceFlowInfo? _gitLabDeviceFlowInfo;
     private bool           _bitbucketSigningIn;
+    private bool           _bitbucketOAuthSigningIn;
     private string         _bitbucketUsername = "";
     private string         _bitbucketAppPassword = "";
     private bool           _azureDevOpsSigningIn;
+    private bool           _azureDevOpsOAuthSigningIn;
     private string         _azureDevOpsPat = "";
     private readonly Dictionary<string, string> _gitHostTokenInputs = [];
     private string?        _gitHostSavedId;
@@ -1480,6 +1531,18 @@
         BitbucketAuth.SignOut();
     }
 
+    private async Task StartBitbucketBrowserSignIn()
+    {
+        _bitbucketOAuthSigningIn = true;
+        StateHasChanged();
+        try { await BitbucketAuth.SignInWithBrowserAsync(); }
+        finally
+        {
+            _bitbucketOAuthSigningIn = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task StartAzureDevOpsSignIn()
     {
         _azureDevOpsSigningIn = true;
@@ -1489,6 +1552,18 @@
         {
             _azureDevOpsPat       = "";
             _azureDevOpsSigningIn = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartAzureDevOpsBrowserSignIn()
+    {
+        _azureDevOpsOAuthSigningIn = true;
+        StateHasChanged();
+        try { await AzureDevOpsAuth.SignInWithBrowserAsync(); }
+        finally
+        {
+            _azureDevOpsOAuthSigningIn = false;
             StateHasChanged();
         }
     }

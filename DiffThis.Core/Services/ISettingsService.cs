@@ -37,6 +37,11 @@ public interface ISettingsService
 
     // ── Bitbucket Cloud (pull requests) ────────────────────────────────────
     string BitbucketUsername { get; set; }  // Atlassian account email used with the API token; default ""
+    string BitbucketOAuthClientId { get; set; }  // optional override OAuth consumer Key; default ""
+    string BitbucketOAuthClientSecret { get; set; }  // optional override OAuth consumer Secret; default ""
+
+    // ── Azure DevOps (pull requests) ────────────────────────────────────────
+    string AzureDevOpsOAuthClientId { get; set; }  // optional override Entra ID app (client) ID; default ""
 
     // ── Self-hosted git hosts (pull requests) ──────────────────────────────
     string GitHostsJson { get; set; }  // JSON-serialised List<GitHostConfig>

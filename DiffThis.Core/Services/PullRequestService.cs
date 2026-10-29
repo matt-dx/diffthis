@@ -223,7 +223,7 @@ public class PullRequestService(
     private async Task<List<PullRequestInfo>> GetBitbucketCloudAsync(
         string apiBase, string remoteUrl, PullRequestState state, CancellationToken ct)
     {
-        var creds = await bitbucket.GetCredentialsAsync()
+        var authHeader = await bitbucket.GetAuthHeaderAsync()
             ?? throw new InvalidOperationException("Not signed in to Bitbucket. Open Settings to connect your Bitbucket account.");
 
         var (workspace, repo) = ParseOwnerRepo(remoteUrl)
@@ -234,8 +234,7 @@ public class PullRequestService(
         var url = $"{apiBase}/repositories/{workspace}/{repo}/pullrequests?{stateQuery}&pagelen=50";
 
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Basic",
-            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{creds.Username}:{creds.AppPassword}")));
+        req.Headers.Authorization = authHeader;
         req.Headers.Add("Accept", "application/json");
 
         var resp = await SendAsync(req, "Bitbucket", ct);
@@ -251,7 +250,22 @@ public class PullRequestService(
                 Author            = d.Author?.DisplayName ?? string.Empty,
                 BaseRefName       = d.Destination?.Branch?.Name ?? string.Empty,
                 HeadRefName       = d.Source?.Branch?.Name ?? string.Empty,
-                SourceRemoteRef   = $"refs/pull-requests/{d.Id}/from",
+                // Unlike Bitbucket Server, Bitbucket Cloud has no "refs/pull-requests/N/from"
+                // synthetic ref. While open, the source branch itself is still fetchable by name;
+                // once merged it may be deleted, so fall back to the exact source commit SHA
+                // instead (GitService falls back further still, to the merge commit, and then to
+                // checking whether the source commit came along for free with the destination
+                // branch's own history).
+                SourceRemoteRef   = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase)
+                    && d.Source?.Commit?.Hash is { Length: > 0 } sha
+                        ? sha
+                        : d.Source?.Branch?.Name ?? string.Empty,
+                MergeCommitSha    = d.MergeCommit?.Hash,
+                SourceAvailability = string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase)
+                    ? PullRequestSourceAvailability.Available
+                    : d.MergeCommit?.Hash is { Length: > 0 }
+                        ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
+                        : PullRequestSourceAvailability.Unknown,
                 IsCrossRepository = !string.Equals(d.Source?.Repository?.FullName, repoFullName, StringComparison.OrdinalIgnoreCase),
                 IsDraft           = false, // Bitbucket Cloud has no draft-PR concept
                 IsMerged          = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase),
@@ -303,7 +317,7 @@ public class PullRequestService(
 
     private async Task<List<PullRequestInfo>> GetAzureDevOpsAsync(string remoteUrl, PullRequestState state, CancellationToken ct)
     {
-        var token = await azureDevOps.GetTokenAsync()
+        var authHeader = await azureDevOps.GetAuthHeaderAsync()
             ?? throw new InvalidOperationException("Not signed in to Azure DevOps. Open Settings to connect your Azure DevOps account.");
 
         var (org, project, repo) = ParseAzureDevOpsRemote(remoteUrl)
@@ -312,8 +326,7 @@ public class PullRequestService(
         var url = $"https://dev.azure.com/{Uri.EscapeDataString(org)}/{Uri.EscapeDataString(project)}/_apis/git/repositories/{Uri.EscapeDataString(repo)}/pullrequests?searchCriteria.status=all&api-version=7.1&$top=100";
 
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Basic",
-            Convert.ToBase64String(Encoding.UTF8.GetBytes($":{token}")));
+        req.Headers.Authorization = authHeader;
 
         var resp = await SendAsync(req, "Azure DevOps", ct);
         var page = await resp.Content.ReadFromJsonAsync<AdoPageDto>(CamelCase, ct);
@@ -331,7 +344,22 @@ public class PullRequestService(
                 Author          = d.CreatedBy?.DisplayName ?? string.Empty,
                 BaseRefName     = StripRefsHeads(d.TargetRefName),
                 HeadRefName     = StripRefsHeads(d.SourceRefName),
-                SourceRemoteRef = d.SourceRefName, // Azure DevOps PRs have no fork ref — fetch the source branch directly
+                // Azure DevOps PRs have no fork ref. While active, the source branch itself is
+                // still fetchable by name (Azure DevOps won't fetch an arbitrary commit SHA
+                // directly even when it IS the live branch tip); once completed the branch is
+                // commonly deleted, so fall back to the exact source commit SHA instead
+                // (GitService falls back further still, to checking whether that commit came
+                // along for free while fetching the now-containing target branch).
+                SourceRemoteRef = string.Equals(d.Status, "completed", StringComparison.OrdinalIgnoreCase)
+                    && d.LastMergeSourceCommit?.CommitId is { Length: > 0 } sha
+                        ? sha
+                        : d.SourceRefName,
+                MergeCommitSha  = d.LastMergeCommit?.CommitId,
+                SourceAvailability = string.Equals(d.Status, "active", StringComparison.OrdinalIgnoreCase)
+                    ? PullRequestSourceAvailability.Available
+                    : d.LastMergeCommit?.CommitId is { Length: > 0 }
+                        ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
+                        : PullRequestSourceAvailability.Unknown,
                 IsDraft         = d.IsDraft,
                 IsMerged        = string.Equals(d.Status, "completed", StringComparison.OrdinalIgnoreCase),
                 UpdatedAt       = d.CreationDate,
@@ -520,6 +548,7 @@ public class PullRequestService(
         public BitbucketUserDto? Author { get; set; }
         public BitbucketEndpointDto? Source { get; set; }
         public BitbucketEndpointDto? Destination { get; set; }
+        public BitbucketCommitDto? MergeCommit { get; set; }
         public string State { get; set; } = string.Empty;
         public DateTimeOffset UpdatedOn { get; set; }
     }
@@ -529,10 +558,12 @@ public class PullRequestService(
     private sealed class BitbucketEndpointDto
     {
         public BitbucketBranchDto? Branch { get; set; }
+        public BitbucketCommitDto? Commit { get; set; }
         public BitbucketRepoDto? Repository { get; set; }
     }
 
     private sealed class BitbucketBranchDto { public string Name { get; set; } = string.Empty; }
+    private sealed class BitbucketCommitDto { public string Hash { get; set; } = string.Empty; }
     private sealed class BitbucketRepoDto { public string FullName { get; set; } = string.Empty; }
 
     private sealed class BitbucketServerPageDto { public List<BitbucketServerPrDto> Values { get; set; } = []; }
@@ -564,7 +595,11 @@ public class PullRequestService(
         public string Status { get; set; } = string.Empty;
         public bool IsDraft { get; set; }
         public DateTimeOffset CreationDate { get; set; }
+        public AdoCommitRefDto? LastMergeSourceCommit { get; set; }
+        public AdoCommitRefDto? LastMergeCommit { get; set; }
     }
+
+    private sealed class AdoCommitRefDto { public string CommitId { get; set; } = string.Empty; }
 
     private sealed class AdoUserDto { public string DisplayName { get; set; } = string.Empty; }
 }

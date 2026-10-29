@@ -132,20 +132,54 @@ public class GitService : IGitService
         };
     }
 
-    public async Task<string> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, CancellationToken ct = default)
+    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, CancellationToken ct = default)
     {
         var result = await RunGitAsync(repositoryPath,
             ["fetch", "origin",
              $"{remoteRef}:refs/remotes/{localRef}",
              $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
 
-        if (result.ExitCode != 0)
-            throw new InvalidOperationException(
-                result.StandardError.Trim() is { Length: > 0 } err ? err
-                : $"git fetch exited with code {result.ExitCode}");
+        if (result.ExitCode == 0) return new PullRequestRefResolution(localRef, null);
 
-        return localRef;
+        var err = result.StandardError.Trim();
+
+        // Some hosts (seen on Azure DevOps) refuse to fetch an arbitrary commit SHA directly,
+        // even one that's perfectly reachable — only named refs are fetchable. The base-branch
+        // refspec above is a separate part of the same command, so if remoteRef is a SHA and it
+        // was actually merged (a real merge, not a squash), it likely came along for free as
+        // part of that branch's history. Use it directly in that case — no local ref needed.
+        if (IsCommitSha(remoteRef))
+        {
+            var verify = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{remoteRef}^{{commit}}"], ct);
+            if (verify.ExitCode == 0) return new PullRequestRefResolution(remoteRef, null);
+        }
+
+        // Last resort for a squash merge: the original source commits are gone for good (squashing
+        // never keeps them reachable anywhere, unlike a real merge), but the squash commit itself —
+        // sitting right there on the base branch — contains exactly the same file changes. Diffing
+        // it against its own parent reproduces the PR's diff without needing the source at all.
+        if (mergeCommitSha is { Length: > 0 })
+        {
+            var verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+            if (verifyMerge.ExitCode != 0)
+            {
+                await RunGitAsync(repositoryPath, ["fetch", "origin", $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+                verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+            }
+            if (verifyMerge.ExitCode == 0)
+                return new PullRequestRefResolution(mergeCommitSha, $"{mergeCommitSha}^");
+        }
+
+        if (err.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "This pull request's source commit is no longer available — likely because its " +
+                "branch was deleted after merging (e.g. a squash merge) and the host doesn't keep " +
+                $"the original commits reachable any other way. ({err})");
+
+        throw new InvalidOperationException(err is { Length: > 0 } ? err : $"git fetch exited with code {result.ExitCode}");
     }
+
+    private static bool IsCommitSha(string value) => value.Length == 40 && value.All(Uri.IsHexDigit);
 
     public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)
     {
