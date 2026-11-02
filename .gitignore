@@ -65,3 +65,7 @@ publish/
 *.msixbundle
 *.msixupload
 secrets.txt
+
+# Local-only OAuth client secrets, embedded into release builds by CI from GitHub secrets —
+# never committed. See DiffThis.Core/Services/bitbucket-oauth-secrets.example.json.
+DiffThis.Core/Services/bitbucket-oauth-secrets.json

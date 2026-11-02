@@ -165,3 +165,9 @@ Allow users to mark individual AI findings as helpful or not helpful, and use th
 - Eventually: inject a `{{FeedbackExamples}}` block into the prompt with accepted/rejected examples
 
 **Why deferred:** Requires feedback storage, aggregation logic, and a feedback-to-prompt pipeline. Value is high but the feedback collection surface needs careful UX design to avoid being intrusive.
+
+---
+
+## Add codex-security integration
+
+See the [npm package](https://www.npmjs.com/package/@openai/codex-security)

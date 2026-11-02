@@ -17,9 +17,18 @@ public class SettingsService : ISettingsService
     private const string DiffContextLinesKey      = "diff_context_lines";
     private const string MainViewSideBySideKey   = "main_view_side_by_side";
     private const string CopilotTimeoutKey        = "copilot_timeout_seconds";
+    private const string GitHubClientIdKey        = "github_oauth_client_id";
+    private const string GitLabClientIdKey        = "gitlab_oauth_client_id";
+    private const string BitbucketUsernameKey     = "bitbucket_username";
+    private const string BitbucketOAuthClientIdKey     = "bitbucket_oauth_client_id";
+    private const string BitbucketOAuthClientSecretKey = "bitbucket_oauth_client_secret";
+    private const string AzureDevOpsClientIdKey        = "azuredevops_oauth_client_id";
+    private const string GitHostsKey              = "git_hosts";
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string AiLoggingKey            = "ai_logging_enabled";
+    private const string AutoRefreshModelsEnabledKey  = "auto_refresh_models_enabled";
+    private const string AutoRefreshModelsHoursKey    = "auto_refresh_models_interval_hours";
     private const string WindowXKey             = "window_x";
     private const string WindowYKey             = "window_y";
     private const string WindowWidthKey         = "window_width";
@@ -28,6 +37,50 @@ public class SettingsService : ISettingsService
     private const string WindowMonitorTopKey    = "window_monitor_top";
     private const string WindowMonitorRightKey  = "window_monitor_right";
     private const string WindowMonitorBottomKey = "window_monitor_bottom";
+
+    // The OAuth client secret is a genuine credential, unlike the other settings here, which are
+    // all non-secret preferences — Preferences is an unencrypted plist/registry-backed store, so
+    // it's kept in SecureStorage instead, with a cached in-memory copy since SecureStorage's API
+    // is async-only and this property is read synchronously by both the UI and BitbucketAuthService.
+    private string? _bitbucketOAuthClientSecretCache;
+    private readonly Task _bitbucketOAuthClientSecretLoad;
+
+    public SettingsService()
+    {
+        _bitbucketOAuthClientSecretLoad = LoadBitbucketOAuthClientSecretAsync();
+    }
+
+    // Callers that need the secret as soon as it's actually available (e.g. starting an OAuth
+    // flow) should await this instead of reading the property directly, since the constructor's
+    // load from SecureStorage is async and may not have finished yet.
+    public async Task<string> GetBitbucketOAuthClientSecretAsync()
+    {
+        await _bitbucketOAuthClientSecretLoad;
+        return _bitbucketOAuthClientSecretCache ?? "";
+    }
+
+    private async Task LoadBitbucketOAuthClientSecretAsync()
+    {
+        try
+        {
+            var secure = await SecureStorage.Default.GetAsync(BitbucketOAuthClientSecretKey);
+            if (!string.IsNullOrEmpty(secure))
+            {
+                _bitbucketOAuthClientSecretCache = secure;
+                return;
+            }
+        }
+        catch { /* best effort */ }
+
+        // Migrate a secret saved by an older version of DiffThis, which stored it in Preferences.
+        var legacy = Preferences.Get(BitbucketOAuthClientSecretKey, "");
+        if (!string.IsNullOrEmpty(legacy))
+        {
+            _bitbucketOAuthClientSecretCache = legacy;
+            try { await SecureStorage.Default.SetAsync(BitbucketOAuthClientSecretKey, legacy); } catch { /* best effort */ }
+            Preferences.Remove(BitbucketOAuthClientSecretKey);
+        }
+    }
 
     public event Action? ThemeChanged;
 
@@ -143,6 +196,63 @@ public class SettingsService : ISettingsService
         set => Preferences.Set(CopilotTimeoutKey, value is { } secs && secs > 0 ? secs : 0);
     }
 
+    public string GitHubOAuthClientId
+    {
+        get => Preferences.Get(GitHubClientIdKey, "");
+        set => Preferences.Set(GitHubClientIdKey, value);
+    }
+
+    public string GitLabOAuthClientId
+    {
+        get => Preferences.Get(GitLabClientIdKey, "");
+        set => Preferences.Set(GitLabClientIdKey, value);
+    }
+
+    public string BitbucketUsername
+    {
+        get => Preferences.Get(BitbucketUsernameKey, "");
+        set => Preferences.Set(BitbucketUsernameKey, value);
+    }
+
+    public string BitbucketOAuthClientId
+    {
+        get => Preferences.Get(BitbucketOAuthClientIdKey, "");
+        set => Preferences.Set(BitbucketOAuthClientIdKey, value);
+    }
+
+    public string BitbucketOAuthClientSecret
+    {
+        get => _bitbucketOAuthClientSecretCache ?? "";
+        set
+        {
+            _bitbucketOAuthClientSecretCache = value;
+            Preferences.Remove(BitbucketOAuthClientSecretKey); // in case a legacy plaintext copy is still there
+            _ = StoreBitbucketOAuthClientSecretAsync(value);
+        }
+    }
+
+    private static async Task StoreBitbucketOAuthClientSecretAsync(string value)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(value)) SecureStorage.Default.Remove(BitbucketOAuthClientSecretKey);
+            else await SecureStorage.Default.SetAsync(BitbucketOAuthClientSecretKey, value);
+        }
+        catch { /* best effort */ }
+    }
+
+    public string AzureDevOpsOAuthClientId
+    {
+        get => Preferences.Get(AzureDevOpsClientIdKey, "");
+        set => Preferences.Set(AzureDevOpsClientIdKey, value);
+    }
+
+    public string GitHostsJson
+    {
+        get => Preferences.Get(GitHostsKey, "[]");
+        set => Preferences.Set(GitHostsKey, value);
+    }
+
     public string OllamaEndpointsJson
     {
         get => Preferences.Get(OllamaEndpointsKey, "[]");
@@ -163,6 +273,18 @@ public class SettingsService : ISettingsService
         get => Preferences.Get(AiLoggingKey, false);
 #endif
         set => Preferences.Set(AiLoggingKey, value);
+    }
+
+    public bool AutoRefreshModelsEnabled
+    {
+        get => Preferences.Get(AutoRefreshModelsEnabledKey, true);
+        set => Preferences.Set(AutoRefreshModelsEnabledKey, value);
+    }
+
+    public int AutoRefreshModelsIntervalHours
+    {
+        get => Preferences.Get(AutoRefreshModelsHoursKey, 24);
+        set => Preferences.Set(AutoRefreshModelsHoursKey, value);
     }
 
     public int WindowX             { get => Preferences.Get(WindowXKey,             -1);    set => Preferences.Set(WindowXKey,             value); }

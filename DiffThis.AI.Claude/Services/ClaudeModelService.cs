@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using DiffThis.Core.Models;
+using DiffThis.Core.Services;
 using DiffThis.AI.Shared.Models;
 
 namespace DiffThis.AI.Claude.Services;
@@ -16,6 +17,7 @@ public partial class ClaudeModelService : IClaudeModelService
     private static readonly string[] TierOrder = ["opus", "sonnet", "haiku"];
 
     private readonly IClaudeAuthService _auth;
+    private readonly ISettingsService   _settings;
     private readonly HttpClient _http = new() { BaseAddress = new Uri("https://api.anthropic.com") };
 
     private List<ClaudeModel> _models = [];
@@ -27,13 +29,15 @@ public partial class ClaudeModelService : IClaudeModelService
 
     public event Action? ModelsChanged;
 
-    public ClaudeModelService(IClaudeAuthService auth)
+    public ClaudeModelService(IClaudeAuthService auth, ISettingsService settings)
     {
-        _auth = auth;
+        _auth     = auth;
+        _settings = settings;
         Load();
 
-        // Auto-fetch in background on first run
-        if (_models.Count == 0)
+        // Auto-fetch in background on first run, or when the cached catalog has
+        // aged past the user's configured auto-refresh interval.
+        if (ModelAutoRefresh.ShouldRefresh(_models.Count, LastFetchedAt, _settings))
             _ = RefreshAsync();
     }
 
@@ -199,9 +203,9 @@ public partial class ClaudeModelService : IClaudeModelService
     {
         try
         {
-            var json = Preferences.Get(ModelsKey, "[]");
+            var json = LocalJsonStore.Get(ModelsKey, "[]");
             _models = JsonSerializer.Deserialize<List<ClaudeModel>>(json) ?? [];
-            var ts = Preferences.Get(FetchedAtKey, "");
+            var ts = LocalJsonStore.Get(FetchedAtKey, "");
             LastFetchedAt = string.IsNullOrEmpty(ts) ? null : DateTime.Parse(ts).ToUniversalTime();
         }
         catch { _models = []; }
@@ -211,8 +215,8 @@ public partial class ClaudeModelService : IClaudeModelService
     {
         try
         {
-            Preferences.Set(ModelsKey, JsonSerializer.Serialize(_models));
-            Preferences.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
+            LocalJsonStore.Set(ModelsKey, JsonSerializer.Serialize(_models));
+            LocalJsonStore.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
         }
         catch { /* best effort */ }
     }

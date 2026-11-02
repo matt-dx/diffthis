@@ -58,6 +58,15 @@ jobs:
           $xml.SelectSingleNode("//ApplicationDisplayVersion").InnerText = $version
           $xml.Save((Resolve-Path $csproj))
 
+      - name: Write Bitbucket OAuth client secret
+        env:
+          BITBUCKET_OAUTH_CLIENT_ID: ${{ secrets.BITBUCKET_OAUTH_CLIENT_ID }}
+          BITBUCKET_OAUTH_CLIENT_SECRET: ${{ secrets.BITBUCKET_OAUTH_CLIENT_SECRET }}
+        run: |
+          @{ ClientId = $env:BITBUCKET_OAUTH_CLIENT_ID; ClientSecret = $env:BITBUCKET_OAUTH_CLIENT_SECRET } `
+            | ConvertTo-Json `
+            | Set-Content -Path "DiffThis.Core/Services/bitbucket-oauth-secrets.json" -Encoding utf8
+
       - name: Publish Windows MSIX (Store upload)
         run: >
           dotnet publish DiffThis/DiffThis.csproj

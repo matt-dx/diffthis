@@ -8,4 +8,8 @@ public class BranchSelectionState
     public bool   PinCompare    { get; set; }
     public string BaseCommit    { get; set; } = string.Empty;
     public string CompareCommit { get; set; } = string.Empty;
+
+    /// Whether this repo's Select Branches page was last left on the "Pull Requests" tab rather
+    /// than "Branches".
+    public bool UsePullRequests { get; set; }
 }

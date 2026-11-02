@@ -29,11 +29,33 @@ public interface ISettingsService
     // ── GitHub Copilot ─────────────────────────────────────────────────────
     int? CopilotTimeoutSeconds { get; set; }  // null = no timeout (default: 300)
 
+    // ── GitHub (pull requests) ────────────────────────────────────────────
+    string GitHubOAuthClientId { get; set; }  // user-registered OAuth App client ID (Device Flow enabled); default ""
+
+    // ── GitLab (pull requests) ─────────────────────────────────────────────
+    string GitLabOAuthClientId { get; set; }  // user-registered Application ID (Device Flow is implicit); default ""
+
+    // ── Bitbucket Cloud (pull requests) ────────────────────────────────────
+    string BitbucketUsername { get; set; }  // Atlassian account email used with the API token; default ""
+    string BitbucketOAuthClientId { get; set; }  // optional override OAuth consumer Key; default ""
+    string BitbucketOAuthClientSecret { get; set; }  // optional override OAuth consumer Secret; default ""
+    Task<string> GetBitbucketOAuthClientSecretAsync();  // like the getter above, but waits for the SecureStorage load to finish
+
+    // ── Azure DevOps (pull requests) ────────────────────────────────────────
+    string AzureDevOpsOAuthClientId { get; set; }  // optional override Entra ID app (client) ID; default ""
+
+    // ── Self-hosted git hosts (pull requests) ──────────────────────────────
+    string GitHostsJson { get; set; }  // JSON-serialised List<GitHostConfig>
+
     // ── Ollama endpoints ───────────────────────────────────────────────────
     string OllamaEndpointsJson { get; set; }  // JSON-serialised List<PersistedEndpoint>
 
     // ── Logging ────────────────────────────────────────────────────────────
     bool AiLoggingEnabled { get; set; }  // default: true in Debug, false in Release
+
+    // ── AI model auto-refresh ─────────────────────────────────────────────
+    bool AutoRefreshModelsEnabled       { get; set; }  // default: true
+    int  AutoRefreshModelsIntervalHours { get; set; }  // default: 24
 
     // ── Unsupported / experimental features ───────────────────────────────
     bool AnalysisLinksEnabled { get; set; }  // default: false

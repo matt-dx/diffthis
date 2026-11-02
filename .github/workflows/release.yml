@@ -44,6 +44,16 @@ jobs:
           git commit -m "chore: bump version to 1.${{ github.run_number }}.0 [skip ci]"
           git push
 
+      - name: Write Bitbucket OAuth client secret
+        shell: pwsh
+        env:
+          BITBUCKET_OAUTH_CLIENT_ID: ${{ secrets.BITBUCKET_OAUTH_CLIENT_ID }}
+          BITBUCKET_OAUTH_CLIENT_SECRET: ${{ secrets.BITBUCKET_OAUTH_CLIENT_SECRET }}
+        run: |
+          @{ ClientId = $env:BITBUCKET_OAUTH_CLIENT_ID; ClientSecret = $env:BITBUCKET_OAUTH_CLIENT_SECRET } `
+            | ConvertTo-Json `
+            | Set-Content -Path "DiffThis.Core/Services/bitbucket-oauth-secrets.json" -Encoding utf8
+
       - name: Publish Windows (self-contained exe)
         run: >
           dotnet publish DiffThis/DiffThis.csproj

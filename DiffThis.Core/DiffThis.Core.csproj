@@ -12,4 +12,12 @@
     <PackageReference Include="Markdig" Version="0.*" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.*" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Gitignored, machine-local OAuth client secrets (e.g. Bitbucket's) that CI materializes
+         from GitHub secrets before a release build, and that a developer can create locally
+         from the matching *.example.json — never committed. Embedded only when present, so a
+         fresh clone without one still builds fine (falls back to Settings-only configuration). -->
+    <None Remove="Services/bitbucket-oauth-secrets.json" />
+    <EmbeddedResource Include="Services/bitbucket-oauth-secrets.json" Condition="Exists('Services/bitbucket-oauth-secrets.json')" />
+  </ItemGroup>
 </Project>

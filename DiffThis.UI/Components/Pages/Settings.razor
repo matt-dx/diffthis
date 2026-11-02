@@ -5,6 +5,11 @@
 @inject IClaudeModelService ModelService
 @inject ICopilotAuthService CopilotAuth
 @inject ICopilotModelService CopilotModelService
+@inject IGitHubAuthService GitHubAuth
+@inject IGitLabAuthService GitLabAuth
+@inject IBitbucketAuthService BitbucketAuth
+@inject IAzureDevOpsAuthService AzureDevOpsAuth
+@inject IGitHostService GitHosts
 @inject IOpenAiAuthService OpenAiAuth
 @inject IOpenAiModelService OpenAiModelService
 @inject IOllamaEndpointService OllamaEndpoints
@@ -18,8 +23,16 @@
     <span class="settings-header-title">Settings</span>
 </div>
 <div class="settings-body">
-<div class="page narrow">
+<div class="page settings-page">
 
+    <div class="mode-toggle">
+        <button class="btn btn-sm @(_activeTab == SettingsTab.General ? "btn-active" : "")" @onclick="() => _activeTab = SettingsTab.General">General</button>
+        <button class="btn btn-sm @(_activeTab == SettingsTab.AiIntegration ? "btn-active" : "")" @onclick="() => _activeTab = SettingsTab.AiIntegration">AI Integration</button>
+        <button class="btn btn-sm @(_activeTab == SettingsTab.SourceControl ? "btn-active" : "")" @onclick="() => _activeTab = SettingsTab.SourceControl">Source Control</button>
+    </div>
+
+    @if (_activeTab == SettingsTab.General)
+    {
     <section class="settings-section">
         <p class="section-title">Appearance</p>
         <div class="setting-card">
@@ -44,6 +57,41 @@
                     <span class="toggle-track"></span>
                 </label>
             </div>
+        </div>
+    </section>
+    }
+
+    @if (_activeTab == SettingsTab.AiIntegration)
+    {
+    <section class="settings-section">
+        <p class="section-title">Automatic Model Refresh</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Refresh model lists in the background</p>
+                    <p class="setting-desc">Periodically re-fetch the available models for Claude, Copilot, and OpenAI on startup, instead of relying on the last cached list.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="autoRefreshModelsEnabled" @bind:after="SaveAutoRefreshModelsEnabled" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            @if (autoRefreshModelsEnabled)
+            {
+            <div class="setting-row" style="margin-top:12px">
+                <div>
+                    <p class="setting-label">Refresh if older than</p>
+                    <p class="setting-desc">How long a cached model list can go stale before it's refreshed again on startup.</p>
+                </div>
+                <select class="select-sm" @bind="autoRefreshModelsIntervalHours" @bind:after="SaveAutoRefreshModelsIntervalHours">
+                    <option value="1">1 hour</option>
+                    <option value="6">6 hours</option>
+                    <option value="24">1 day</option>
+                    <option value="72">3 days</option>
+                    <option value="168">1 week</option>
+                </select>
+            </div>
+            }
         </div>
     </section>
 
@@ -250,7 +298,365 @@
             }
         </div>
     </section>
+    }
 
+    @if (_activeTab == SettingsTab.SourceControl)
+    {
+    <section class="settings-section">
+        <p class="section-title">GitHub (Pull Requests)</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">OAuth App Client ID <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Sign-in works out of the box using DiffThis's own GitHub OAuth App. If you'd
+                        rather DiffThis show up under a different app's name on your GitHub account,
+                        <a href="https://github.com/settings/applications/new" target="_blank">create your own OAuth App ↗</a>
+                        (enable "Device Flow") and paste its Client ID below (no client secret needed).
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row">
+                <input type="text" class="setting-text-input" placeholder="Iv1.xxxxxxxxxxxxxxxx (leave blank to use the default)"
+                       value="@Svc.GitHubOAuthClientId"
+                       @onchange="e => Svc.GitHubOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (GitHubAuth.State == GitHubAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(GitHubAuth.Username))
+                            {
+                                <span> · @GitHubAuth.Username</span>
+                            }
+                        </p>
+                    }
+                    else if (GitHubAuth.State == GitHubAuthState.PendingDeviceFlow
+                             && _gitHubDeviceFlowInfo is not null)
+                    {
+                        <p class="setting-desc"><span class="auth-dot auth-pending"></span>Waiting for authorization…</p>
+                        <div class="device-flow-card">
+                            <p class="device-flow-label">Enter this code at <strong>github.com/login/device</strong></p>
+                            <div class="device-flow-code-row">
+                                <code class="device-flow-code">@_gitHubDeviceFlowInfo.UserCode</code>
+                                <a class="btn btn-sm" href="@_gitHubDeviceFlowInfo.VerificationUri" target="_blank">Open GitHub ↗</a>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — click <strong>Sign in</strong> to authorize DiffThis to read your pull requests.
+                        </p>
+                        @if (!string.IsNullOrEmpty(GitHubAuth.LastError))
+                        {
+                            <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@GitHubAuth.LastError</p>
+                        }
+                    }
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                    @if (GitHubAuth.State == GitHubAuthState.Authenticated)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="GitHubSignOut">Sign out</button>
+                    }
+                    else if (GitHubAuth.State == GitHubAuthState.PendingDeviceFlow)
+                    {
+                        <button class="btn btn-sm" @onclick="CancelGitHubSignIn">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" disabled="@_gitHubSigningIn" @onclick="StartGitHubSignIn">
+                            @(_gitHubSigningIn ? "Starting…" : "Sign in")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">GitLab (Pull Requests)</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Application ID <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Sign-in works out of the box using DiffThis's own GitLab Application. If you'd
+                        rather DiffThis show up under a different application's name on your GitLab
+                        account, <a href="https://gitlab.com/-/user_settings/applications" target="_blank">create your own ↗</a>
+                        (scope: <code>read_api</code>, with "Device authorization grant" enabled and
+                        "Confidential" unchecked) and paste its Application ID below.
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row">
+                <input type="text" class="setting-text-input" placeholder="Application ID (leave blank to use the default)"
+                       value="@Svc.GitLabOAuthClientId"
+                       @onchange="e => Svc.GitLabOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (GitLabAuth.State == GitLabAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(GitLabAuth.Username))
+                            {
+                                <span> · @GitLabAuth.Username</span>
+                            }
+                        </p>
+                    }
+                    else if (GitLabAuth.State == GitLabAuthState.PendingDeviceFlow
+                             && _gitLabDeviceFlowInfo is not null)
+                    {
+                        <p class="setting-desc"><span class="auth-dot auth-pending"></span>Waiting for authorization…</p>
+                        <div class="device-flow-card">
+                            <p class="device-flow-label">Enter this code at <strong>gitlab.com/login/device</strong></p>
+                            <div class="device-flow-code-row">
+                                <code class="device-flow-code">@_gitLabDeviceFlowInfo.UserCode</code>
+                                <a class="btn btn-sm" href="@_gitLabDeviceFlowInfo.VerificationUri" target="_blank">Open GitLab ↗</a>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — click <strong>Sign in</strong> to authorize DiffThis to read your merge requests.
+                        </p>
+                        @if (!string.IsNullOrEmpty(GitLabAuth.LastError))
+                        {
+                            <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@GitLabAuth.LastError</p>
+                        }
+                    }
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                    @if (GitLabAuth.State == GitLabAuthState.Authenticated)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="GitLabSignOut">Sign out</button>
+                    }
+                    else if (GitLabAuth.State == GitLabAuthState.PendingDeviceFlow)
+                    {
+                        <button class="btn btn-sm" @onclick="CancelGitLabSignIn">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" disabled="@_gitLabSigningIn" @onclick="StartGitLabSignIn">
+                            @(_gitLabSigningIn ? "Starting…" : "Sign in")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Bitbucket (Pull Requests)</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">OAuth Client <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Browser sign-in works out of the box using DiffThis's own Bitbucket OAuth client. To use
+                        your own instead, in your Bitbucket workspace's settings under "Apps and features" → OAuth
+                        clients → Create OAuth client: name it anything, under Authorization check "Authorization
+                        code" with callback URL <code>http://localhost:51738/callback</code>, and under Scopes
+                        check "Repositories: Read" and "Pull requests: Read". Then paste its Client ID and Secret below.
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row" style="gap:8px">
+                <input type="text" class="setting-text-input" placeholder="Client ID (leave blank to use the default)" style="margin-top:0"
+                       value="@Svc.BitbucketOAuthClientId"
+                       @onchange="e => Svc.BitbucketOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+                <input type="password" class="setting-text-input" placeholder="Secret (leave blank to use the default)" style="margin-top:0"
+                       value="@Svc.BitbucketOAuthClientSecret"
+                       @onchange="e => Svc.BitbucketOAuthClientSecret = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (BitbucketAuth.State == BitbucketAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(BitbucketAuth.Username))
+                            {
+                                <span> · @BitbucketAuth.Username</span>
+                            }
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — sign in with a browser, or use an API token (App Passwords are retired).
+                        </p>
+                        @if (!string.IsNullOrEmpty(BitbucketAuth.LastError))
+                        {
+                            <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@BitbucketAuth.LastError</p>
+                        }
+                    }
+                </div>
+                @if (BitbucketAuth.State == BitbucketAuthState.Authenticated)
+                {
+                    <button class="btn btn-sm btn-danger" @onclick="BitbucketSignOut">Sign out</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm" disabled="@_bitbucketOAuthSigningIn" @onclick="StartBitbucketBrowserSignIn" style="flex-shrink:0">
+                        @(_bitbucketOAuthSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                    </button>
+                }
+            </div>
+            @if (BitbucketAuth.State != BitbucketAuthState.Authenticated)
+            {
+                <div class="setting-row" style="margin-top:10px;gap:8px">
+                    <input type="text" class="setting-text-input" placeholder="Atlassian account email" style="margin-top:0"
+                           @bind="_bitbucketUsername" />
+                    <input type="password" class="setting-text-input" placeholder="API token" style="margin-top:0"
+                           @bind="_bitbucketAppPassword" />
+                    <button class="btn btn-sm" disabled="@_bitbucketSigningIn" @onclick="StartBitbucketSignIn" style="flex-shrink:0">
+                        @(_bitbucketSigningIn ? "Connecting…" : "Connect")
+                    </button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Azure DevOps (Pull Requests)</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Microsoft Entra App <span style="font-weight:400;color:var(--fg-secondary)">(optional override)</span></p>
+                    <p class="setting-desc">
+                        Browser sign-in works out of the box using DiffThis's own Entra app registration. To use
+                        your own, register one in the
+                        <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Entra admin center ↗</a>
+                        (platform "Mobile and desktop applications", redirect URI <code>http://localhost</code>,
+                        "Allow public client flows" enabled, with Azure DevOps' <code>user_impersonation</code>
+                        delegated permission), then paste its Application (client) ID below. Only works for
+                        organizations backed by a Microsoft Entra (work/school) account, not a personal Microsoft account.
+                    </p>
+                </div>
+            </div>
+            <div class="setting-row">
+                <input type="text" class="setting-text-input" placeholder="Application (client) ID (leave blank to use the default)"
+                       value="@Svc.AzureDevOpsOAuthClientId"
+                       @onchange="e => Svc.AzureDevOpsOAuthClientId = e.Value?.ToString() ?? string.Empty" />
+            </div>
+            <hr class="setting-card-divider" />
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Account</p>
+                    @if (AzureDevOpsAuth.State == AzureDevOpsAuthState.Authenticated)
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-ok"></span>
+                            Connected
+                            @if (!string.IsNullOrEmpty(AzureDevOpsAuth.Username))
+                            {
+                                <span> · @AzureDevOpsAuth.Username</span>
+                            }
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="setting-desc">
+                            <span class="auth-dot auth-off"></span>
+                            Not connected — sign in with a browser, or use a Personal Access Token.
+                        </p>
+                        @if (!string.IsNullOrEmpty(AzureDevOpsAuth.LastError))
+                        {
+                            <p class="setting-desc" style="color:var(--del-fg);margin-top:4px;word-break:break-word">@AzureDevOpsAuth.LastError</p>
+                        }
+                    }
+                </div>
+                @if (AzureDevOpsAuth.State == AzureDevOpsAuthState.Authenticated)
+                {
+                    <button class="btn btn-sm btn-danger" @onclick="AzureDevOpsSignOut">Sign out</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm" disabled="@_azureDevOpsOAuthSigningIn" @onclick="StartAzureDevOpsBrowserSignIn" style="flex-shrink:0">
+                        @(_azureDevOpsOAuthSigningIn ? "Waiting for browser…" : "Sign in with browser")
+                    </button>
+                }
+            </div>
+            @if (AzureDevOpsAuth.State != AzureDevOpsAuthState.Authenticated)
+            {
+                <div class="setting-row" style="margin-top:10px;gap:8px">
+                    <input type="password" class="setting-text-input" placeholder="Personal Access Token" style="margin-top:0"
+                           @bind="_azureDevOpsPat" />
+                    <button class="btn btn-sm" disabled="@_azureDevOpsSigningIn" @onclick="StartAzureDevOpsSignIn" style="flex-shrink:0">
+                        @(_azureDevOpsSigningIn ? "Connecting…" : "Connect")
+                    </button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <p class="section-title">Git Hosts (Self-Hosted Pull Requests)</p>
+        <p class="setting-desc" style="margin-bottom:10px">
+            For self-hosted GitHub Enterprise, GitLab, Bitbucket Server/Data Center, or Gitea —
+            matched by hostname against each repository's "origin" remote. Authenticated with a
+            Personal Access Token from that instance.
+        </p>
+        @foreach (var host in GitHosts.Hosts)
+        {
+            var hostId = host.Id;
+            <div class="setting-card">
+                <div class="setting-row" style="gap:8px">
+                    <input class="model-name-input" style="width:140px;text-align:left" placeholder="Name"
+                           value="@host.Name" @onchange="e => UpdateGitHostName(hostId, e.Value?.ToString() ?? host.Name)" />
+                    <input class="model-name-input" style="flex:1;text-align:left" placeholder="git.example.com"
+                           value="@host.Host" @onchange="e => UpdateGitHostHost(hostId, e.Value?.ToString() ?? host.Host)" />
+                    <select class="model-effort-select" @onchange="e => UpdateGitHostKind(hostId, e.Value?.ToString())">
+                        @foreach (var kind in SelfHostedProviderKinds)
+                        {
+                            <option value="@kind" selected="@(host.Kind == kind)">@kind.DisplayName()</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-danger" title="Remove host" @onclick="() => GitHosts.RemoveHost(hostId)">Remove</button>
+                </div>
+                <div class="setting-row" style="margin-top:8px;gap:8px">
+                    <input type="password" class="model-name-input" style="flex:1;text-align:left"
+                           placeholder="Personal Access Token"
+                           value="@_gitHostTokenInputs.GetValueOrDefault(hostId, "")"
+                           @onchange="e => SetGitHostTokenInput(hostId, e.Value?.ToString())" />
+                    <button class="btn btn-sm" @onclick="() => SaveGitHostToken(hostId)">Save token</button>
+                    @if (_gitHostSavedId == hostId)
+                    {
+                        <span class="setting-desc" style="margin:0">Saved</span>
+                    }
+                    else if (_gitHostErrorId == hostId)
+                    {
+                        <span class="setting-desc" style="margin:0;color:var(--del-fg)">Unable to securely store the token on this device.</span>
+                    }
+                </div>
+            </div>
+        }
+        <div class="setting-card">
+            <button class="btn btn-sm" @onclick="AddGitHost">+ Add Git Host</button>
+        </div>
+    </section>
+    }
+
+    @if (_activeTab == SettingsTab.AiIntegration)
+    {
     <section class="settings-section">
         <p class="section-title"><span class="icon icon-copilot" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#8534F3"></span>GitHub Copilot</p>
         <div class="setting-card">
@@ -537,7 +943,10 @@
             <button class="btn btn-sm" @onclick="AddOllamaEndpoint">+ Add Endpoint</button>
         </div>
     </section>
+    }
 
+    @if (_activeTab == SettingsTab.General)
+    {
     <section class="settings-section">
         <p class="section-title">Diff</p>
         <div class="setting-card">
@@ -648,6 +1057,7 @@
             </div>
         </div>
     </section>
+    }
 
     @if (_showClearLogsConfirm)
     {
@@ -705,6 +1115,8 @@
         </div>
     }
 
+    @if (_activeTab == SettingsTab.General)
+    {
     <section class="settings-section">
         <p class="section-title">About</p>
         <div class="setting-card">
@@ -718,6 +1130,7 @@
             </div>
         </div>
     </section>
+    }
 
 </div><!-- .page.narrow -->
 </div><!-- .settings-body -->
@@ -777,6 +1190,12 @@
     [SupplyParameterFromQuery(Name = "from")]
     private string? ReturnUrl { get; set; }
 
+    [SupplyParameterFromQuery(Name = "tab")]
+    private string? TabParam { get; set; }
+
+    private enum SettingsTab { General, AiIntegration, SourceControl }
+    private SettingsTab _activeTab = SettingsTab.General;
+
     private string _returnUrl = "/";
 
     private int  maxRecent;
@@ -786,6 +1205,8 @@
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
     private bool aiLoggingEnabled;
+    private bool autoRefreshModelsEnabled;
+    private int  autoRefreshModelsIntervalHours;
     private bool           _showClearLogsConfirm;
     private bool           _showClearRepoHistoryConfirm;
     private bool           _showClearCacheConfirm;
@@ -796,6 +1217,27 @@
     private bool           _openAiBusy;
     private bool           _copilotSigningIn;
     private DeviceFlowInfo? _deviceFlowInfo;
+    private bool           _gitHubSigningIn;
+    private GitHubDeviceFlowInfo? _gitHubDeviceFlowInfo;
+    private bool           _gitLabSigningIn;
+    private GitLabDeviceFlowInfo? _gitLabDeviceFlowInfo;
+    private bool           _bitbucketSigningIn;
+    private bool           _bitbucketOAuthSigningIn;
+    private string         _bitbucketUsername = "";
+    private string         _bitbucketAppPassword = "";
+    private bool           _azureDevOpsSigningIn;
+    private bool           _azureDevOpsOAuthSigningIn;
+    private string         _azureDevOpsPat = "";
+    private readonly Dictionary<string, string> _gitHostTokenInputs = [];
+    private string?        _gitHostSavedId;
+    private string?        _gitHostErrorId;
+    private static readonly GitProviderKind[] SelfHostedProviderKinds =
+    [
+        GitProviderKind.GitHubEnterprise,
+        GitProviderKind.GitLabSelfManaged,
+        GitProviderKind.BitbucketServer,
+        GitProviderKind.Gitea,
+    ];
     private readonly HashSet<string>        _ollamaModelsExpanded = [];
     private readonly Dictionary<string, string> _pullInputs       = [];
     private (string ModelId, string Error)?     _pullErrorModal;
@@ -808,6 +1250,12 @@
     protected override void OnInitialized()
     {
         _returnUrl            = string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl;
+        _activeTab            = TabParam?.ToLowerInvariant() switch
+        {
+            "ai" or "ai-integration" => SettingsTab.AiIntegration,
+            "source-control" or "scm" => SettingsTab.SourceControl,
+            _ => SettingsTab.General,
+        };
         maxRecent             = Svc.MaxRecentRepositories;
         fontLigatures         = Svc.FontLigatures;
         diffContextLines      = Svc.DiffContextLines;
@@ -815,6 +1263,8 @@
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
         aiLoggingEnabled      = Svc.AiLoggingEnabled;
+        autoRefreshModelsEnabled       = Svc.AutoRefreshModelsEnabled;
+        autoRefreshModelsIntervalHours = Svc.AutoRefreshModelsIntervalHours;
 
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
@@ -822,12 +1272,22 @@
         CopilotAuth.StateChanged          += OnCopilotStateChanged;
         OpenAiAuth.StateChanged           += OnOpenAiStateChanged;
         OllamaEndpoints.Changed           += OnOllamaChanged;
+        GitHubAuth.StateChanged           += OnGitHubStateChanged;
+        GitLabAuth.StateChanged           += OnGitLabStateChanged;
+        BitbucketAuth.StateChanged        += OnBitbucketStateChanged;
+        AzureDevOpsAuth.StateChanged      += OnAzureDevOpsStateChanged;
+        GitHosts.Changed                  += OnGitHostsChanged;
     }
 
-    private void OnModelsChanged()       => InvokeAsync(StateHasChanged);
-    private void OnCopilotStateChanged() => InvokeAsync(StateHasChanged);
-    private void OnOpenAiStateChanged()  => InvokeAsync(StateHasChanged);
-    private void OnOllamaChanged()       => InvokeAsync(StateHasChanged);
+    private void OnModelsChanged()         => InvokeAsync(StateHasChanged);
+    private void OnCopilotStateChanged()   => InvokeAsync(StateHasChanged);
+    private void OnOpenAiStateChanged()    => InvokeAsync(StateHasChanged);
+    private void OnOllamaChanged()         => InvokeAsync(StateHasChanged);
+    private void OnGitHubStateChanged()    => InvokeAsync(StateHasChanged);
+    private void OnGitLabStateChanged()    => InvokeAsync(StateHasChanged);
+    private void OnBitbucketStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnAzureDevOpsStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnGitHostsChanged()       => InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
@@ -837,7 +1297,21 @@
         CopilotAuth.StateChanged          -= OnCopilotStateChanged;
         OpenAiAuth.StateChanged           -= OnOpenAiStateChanged;
         OllamaEndpoints.Changed           -= OnOllamaChanged;
+        GitHubAuth.StateChanged           -= OnGitHubStateChanged;
+        GitLabAuth.StateChanged           -= OnGitLabStateChanged;
+        BitbucketAuth.StateChanged        -= OnBitbucketStateChanged;
+        AzureDevOpsAuth.StateChanged      -= OnAzureDevOpsStateChanged;
+        GitHosts.Changed                  -= OnGitHostsChanged;
+        // Otherwise an in-flight browser sign-in's loopback listener keeps its fixed port
+        // occupied until its 5-minute timeout even after the user has navigated away.
+        _bitbucketSignInCts?.Cancel();
+        _bitbucketSignInCts?.Dispose();
+        _azureDevOpsSignInCts?.Cancel();
+        _azureDevOpsSignInCts?.Dispose();
     }
+
+    private CancellationTokenSource? _bitbucketSignInCts;
+    private CancellationTokenSource? _azureDevOpsSignInCts;
 
     private void AddOllamaEndpoint() =>
         OllamaEndpoints.AddEndpoint("Local", "http://localhost:11434");
@@ -946,6 +1420,8 @@
     private void SaveDiffContextLines() => Svc.DiffContextLines = diffContextLines;
     private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
     private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
+    private void SaveAutoRefreshModelsEnabled()       => Svc.AutoRefreshModelsEnabled       = autoRefreshModelsEnabled;
+    private void SaveAutoRefreshModelsIntervalHours() => Svc.AutoRefreshModelsIntervalHours = autoRefreshModelsIntervalHours;
     private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;
     private void SaveAiLogging()      => Svc.AiLoggingEnabled     = aiLoggingEnabled;
 
@@ -1043,6 +1519,154 @@
     {
         _deviceFlowInfo = null;
         CopilotAuth.SignOut();
+    }
+
+    private async Task StartGitHubSignIn()
+    {
+        _gitHubSigningIn      = true;
+        StateHasChanged();
+        _gitHubDeviceFlowInfo = await GitHubAuth.StartDeviceFlowAsync();
+        _gitHubSigningIn      = false;
+        StateHasChanged();
+    }
+
+    private void CancelGitHubSignIn()
+    {
+        _gitHubDeviceFlowInfo = null;
+        GitHubAuth.SignOut(); // resets state to NotFound and fires StateChanged
+    }
+
+    private void GitHubSignOut()
+    {
+        _gitHubDeviceFlowInfo = null;
+        GitHubAuth.SignOut();
+    }
+
+    private async Task StartGitLabSignIn()
+    {
+        _gitLabSigningIn      = true;
+        StateHasChanged();
+        _gitLabDeviceFlowInfo = await GitLabAuth.StartDeviceFlowAsync();
+        _gitLabSigningIn      = false;
+        StateHasChanged();
+    }
+
+    private void CancelGitLabSignIn()
+    {
+        _gitLabDeviceFlowInfo = null;
+        GitLabAuth.SignOut();
+    }
+
+    private void GitLabSignOut()
+    {
+        _gitLabDeviceFlowInfo = null;
+        GitLabAuth.SignOut();
+    }
+
+    private async Task StartBitbucketSignIn()
+    {
+        _bitbucketSigningIn = true;
+        StateHasChanged();
+        try { await BitbucketAuth.SignInAsync(_bitbucketUsername, _bitbucketAppPassword); }
+        finally
+        {
+            _bitbucketAppPassword = "";
+            _bitbucketSigningIn   = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BitbucketSignOut()
+    {
+        _bitbucketUsername    = "";
+        _bitbucketAppPassword = "";
+        BitbucketAuth.SignOut();
+    }
+
+    private async Task StartBitbucketBrowserSignIn()
+    {
+        _bitbucketOAuthSigningIn = true;
+        StateHasChanged();
+        _bitbucketSignInCts?.Dispose();
+        _bitbucketSignInCts = new CancellationTokenSource();
+        try { await BitbucketAuth.SignInWithBrowserAsync(_bitbucketSignInCts.Token); }
+        finally
+        {
+            _bitbucketOAuthSigningIn = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartAzureDevOpsSignIn()
+    {
+        _azureDevOpsSigningIn = true;
+        StateHasChanged();
+        try { await AzureDevOpsAuth.SignInAsync(_azureDevOpsPat); }
+        finally
+        {
+            _azureDevOpsPat       = "";
+            _azureDevOpsSigningIn = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartAzureDevOpsBrowserSignIn()
+    {
+        _azureDevOpsOAuthSigningIn = true;
+        StateHasChanged();
+        _azureDevOpsSignInCts?.Dispose();
+        _azureDevOpsSignInCts = new CancellationTokenSource();
+        try { await AzureDevOpsAuth.SignInWithBrowserAsync(_azureDevOpsSignInCts.Token); }
+        finally
+        {
+            _azureDevOpsOAuthSigningIn = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AzureDevOpsSignOut() => AzureDevOpsAuth.SignOut();
+
+    private void AddGitHost() =>
+        GitHosts.AddHost("New Host", "", GitProviderKind.Gitea);
+
+    private void UpdateGitHostName(string id, string name)
+    {
+        var host = GitHosts.Hosts.FirstOrDefault(h => h.Id == id);
+        if (host is null) return;
+        GitHosts.UpdateHost(new GitHostConfig { Id = id, Name = name, Host = host.Host, Kind = host.Kind });
+    }
+
+    private void UpdateGitHostHost(string id, string hostname)
+    {
+        var host = GitHosts.Hosts.FirstOrDefault(h => h.Id == id);
+        if (host is null) return;
+        GitHosts.UpdateHost(new GitHostConfig { Id = id, Name = host.Name, Host = hostname, Kind = host.Kind });
+    }
+
+    private void UpdateGitHostKind(string id, string? kindValue)
+    {
+        var host = GitHosts.Hosts.FirstOrDefault(h => h.Id == id);
+        if (host is null || !Enum.TryParse<GitProviderKind>(kindValue, out var kind)) return;
+        GitHosts.UpdateHost(new GitHostConfig { Id = id, Name = host.Name, Host = host.Host, Kind = kind });
+    }
+
+    private void SetGitHostTokenInput(string id, string? value) =>
+        _gitHostTokenInputs[id] = value ?? "";
+
+    private async Task SaveGitHostToken(string id)
+    {
+        var token = _gitHostTokenInputs.GetValueOrDefault(id, "");
+        if (string.IsNullOrWhiteSpace(token)) return;
+        _gitHostErrorId = null;
+        if (!await GitHosts.SetTokenAsync(id, token))
+        {
+            _gitHostErrorId = id;
+            StateHasChanged();
+            return;
+        }
+        _gitHostTokenInputs.Remove(id);
+        _gitHostSavedId = id;
+        StateHasChanged();
     }
 
     private string Active(AppTheme t) => Svc.Theme == t ? "active" : "";

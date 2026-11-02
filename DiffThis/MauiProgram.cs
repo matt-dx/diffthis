@@ -37,6 +37,12 @@ public static class MauiProgram
         builder.Services.AddSingleton<ISettingsService, SettingsService>();
         builder.Services.AddSingleton<ILogService, LogService>();
         builder.Services.AddSingleton<IGitService, GitService>();
+        builder.Services.AddSingleton<IGitHubAuthService, GitHubAuthService>();
+        builder.Services.AddSingleton<IGitLabAuthService, GitLabAuthService>();
+        builder.Services.AddSingleton<IBitbucketAuthService, BitbucketAuthService>();
+        builder.Services.AddSingleton<IAzureDevOpsAuthService, AzureDevOpsAuthService>();
+        builder.Services.AddSingleton<IGitHostService, GitHostService>();
+        builder.Services.AddSingleton<IPullRequestService, PullRequestService>();
         builder.Services.AddSingleton<IExportService, ExportService>();
         builder.Services.AddSingleton<DiffSessionService>();
         builder.Services.AddSingleton<IClaudeAuthService, ClaudeAuthService>();

@@ -117,6 +117,7 @@ main      { height: 100vh; overflow-y: auto; }
 /* ── Page wrapper ────────────────────────────────────────────────────── */
 .page        { padding: 32px 24px; max-width: 800px; margin: 0 auto; }
 .page.narrow { max-width: 600px; }
+.page.settings-page { max-width: 760px; }
 
 .back-link {
   display: inline-flex; align-items: center; gap: 4px;
@@ -265,6 +266,39 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   background: var(--bg); color: var(--fg);
 }
 .commit-loading { font-size: 12px; color: var(--fg-muted); margin-top: 8px; }
+
+.mode-toggle,
+.pr-state-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+
+.pr-empty { padding: 24px 0; text-align: center; }
+
+.pr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.pr-item {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit;
+  padding: 10px 14px; border: 1px solid var(--border); background: none;
+  border-radius: 8px; cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.pr-item:hover          { border-color: var(--primary); background: var(--bg-secondary); }
+.pr-item:focus-visible  { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pr-item-selected        { border-color: var(--primary); background: var(--bg-secondary); }
+.pr-item-loading         { opacity: 0.7; cursor: progress; pointer-events: none; }
+.pr-item-main {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.pr-number { color: var(--fg-muted); font-size: 13px; flex-shrink: 0; }
+.pr-title  {
+  font-weight: 600; font-size: 14px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+}
+.pr-badge {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
+}
+.pr-badge-draft       { background: var(--bg); color: var(--fg-muted); border: 1px solid var(--border); }
+.pr-badge-merged      { background: var(--primary); color: var(--primary-fg); }
+.pr-badge-unavailable { background: none; color: var(--del-fg); border: 1px solid var(--del-fg); }
+.pr-item-meta { font-size: 11px; color: var(--fg-secondary); margin-top: 4px; }
 
 /* ── Diff page layout ────────────────────────────────────────────────── */
 .diff-page {
@@ -534,6 +568,12 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .badge-picker-count { font-size:11px;color:var(--fg-secondary); }
 .setting-label     { font-size: 14px; font-weight: 600; }
 .setting-desc      { font-size: 12px; color: var(--fg-secondary); margin-top: 2px; }
+.setting-text-input {
+  width: 100%; padding: 8px 12px; margin-top: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg); font-size: 13px;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+}
 
 .theme-selector { display: flex; gap: 8px; margin-top: 12px; }
 .theme-btn {
@@ -595,7 +635,20 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .device-flow-code-row { display: flex; align-items: center; gap: 12px; }
 .device-flow-code {
   font-size: 22px; letter-spacing: 0.12em; font-weight: 600;
-  color: var(--fg); background: none; padding: 0;
+  color: var(--fg); background: none; padding: 4px 8px; margin: -4px -8px;
+  border-radius: 4px; cursor: pointer; user-select: none;
+  transition: background 0.12s;
+}
+.device-flow-code:hover { background: var(--bg); }
+.copy-toast {
+  margin-top: 8px; font-size: 11px; color: var(--primary);
+  animation: copy-toast-fade 1.5s ease-out forwards;
+}
+@keyframes copy-toast-fade {
+  0%   { opacity: 0; transform: translateY(-2px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* ── AI action bar ────────────────────────────────────────────────────── */
@@ -919,7 +972,22 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 }
 .modal-title { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--fg); }
 .modal-body  { font-size: 13px; color: var(--fg-secondary); margin: 0 0 20px; line-height: 1.5; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+.password-field { position: relative; margin-top: 8px; }
+.password-field .setting-text-input { margin-top: 0; padding-right: 36px; }
+.password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; border-radius: 4px;
+  background: transparent; color: var(--fg-secondary); cursor: pointer; font-size: 14px;
+}
+.password-toggle:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* WebView2 (Chromium/Edge) injects its own reveal-password icon inside the field on focus,
+   which overlaps our always-visible toggle button and is barely visible in dark mode. */
+.password-field input[type="password"]::-ms-reveal,
+.password-field input[type="password"]::-ms-clear { display: none; }
 
 /* ── Settings: collapsible row label ─────────────────────────────────── */
 .collapsible-label {

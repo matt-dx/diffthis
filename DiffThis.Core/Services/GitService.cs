@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using DiffThis.Core.Models;
@@ -7,6 +8,17 @@ namespace DiffThis.Core.Services;
 public class GitService : IGitService
 {
     private sealed record GitResult(int ExitCode, string StandardOutput, string StandardError);
+
+    // Two `git fetch` processes against the same repo race to update the same
+    // refs/remotes/origin/* refs (git uses a compare-and-swap ref update), which fails with
+    // "cannot lock ref ... is at X but expected Y". This can happen for real here: the branches
+    // page kicks off a background FetchAndRefreshBranchesAsync, and selecting a PR to compare
+    // can trigger FetchPullRequestRefAsync before that background fetch finishes. Serialize all
+    // fetches per repository path to avoid the race.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _fetchLocks = new(StringComparer.OrdinalIgnoreCase);
+
+    private static SemaphoreSlim GetFetchLock(string repositoryPath) =>
+        _fetchLocks.GetOrAdd(Path.GetFullPath(repositoryPath), _ => new SemaphoreSlim(1, 1));
 
     // CreateNoWindow = true prevents Windows from opening a console window when git.exe
     // (a console subsystem binary) is spawned from a GUI process such as MAUI. Without
@@ -32,7 +44,22 @@ public class GitService : IGitService
 
         var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
+        try
+        {
+            await proc.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Callers (e.g. the per-repo fetch lock) rely on the process having actually
+            // stopped touching the working directory/refs once this call returns, even on
+            // cancellation — so kill it and wait for the real exit instead of abandoning it.
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            await proc.WaitForExitAsync(CancellationToken.None);
+            // stdoutTask/stderrTask were reading against `ct` too and may still be unobserved;
+            // drain them before `using var proc` disposes the streams out from under them.
+            try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+            throw;
+        }
 
         return new GitResult(proc.ExitCode, await stdoutTask, await stderrTask);
     }
@@ -87,8 +114,14 @@ public class GitService : IGitService
 
     public async Task<bool> FetchAsync(string repositoryPath, CancellationToken ct = default)
     {
-        var result = await RunGitAsync(repositoryPath, ["fetch", "--prune"], ct);
-        return result.ExitCode == 0;
+        var gate = GetFetchLock(repositoryPath);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var result = await RunGitAsync(repositoryPath, ["fetch", "--prune"], ct);
+            return result.ExitCode == 0;
+        }
+        finally { gate.Release(); }
     }
 
     public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default, int contextLines = 3)
@@ -130,6 +163,139 @@ public class GitService : IGitService
             IsTruncated = truncatedCount > 0,
             TruncatedFileCount = truncatedCount,
         };
+    }
+
+    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, string? sourcePinnedCommit = null, CancellationToken ct = default)
+    {
+        // A synthetic PR/MR ref (refs/pull/N/head, refs/merge-requests/N/head,
+        // refs/pull-requests/N/from) is always fetchable from the destination's own "origin", even
+        // for a fork PR — GitHub/GitLab/Gitea/Bitbucket Server keep it there regardless of where
+        // the source branch actually lives. An ordinary branch ref is NOT exempt just because it
+        // happens to start with "refs/" too — Azure DevOps reports an active fork's head as
+        // "refs/heads/...", which "origin" does not have. Only these specific namespaces are safe.
+        var isSyntheticPrRef =
+            remoteRef.StartsWith("refs/pull/", StringComparison.Ordinal) ||
+            remoteRef.StartsWith("refs/merge-requests/", StringComparison.Ordinal) ||
+            remoteRef.StartsWith("refs/pull-requests/", StringComparison.Ordinal);
+
+        if (isCrossRepository && string.IsNullOrEmpty(sourceRemoteUrl) && !isSyntheticPrRef)
+            throw new InvalidOperationException(
+                "This pull request's source is a fork, but its clone URL couldn't be determined, " +
+                "so its changes can't be fetched.");
+
+        var gate = GetFetchLock(repositoryPath);
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, sourceRemoteUrl, sourcePinnedCommit, ct);
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, string? sourceRemoteUrl, string? sourcePinnedCommit, CancellationToken ct)
+    {
+        GitResult result;
+        if (!string.IsNullOrEmpty(sourceRemoteUrl))
+        {
+            // The PR's source branch lives in a different repository (a fork) — "origin" doesn't
+            // have it. Always fetch the base branch from origin first, regardless of whether the
+            // fork fetch below succeeds, so the merge-commit fallback below always has an
+            // up-to-date local base branch to check against.
+            await RunGitAsync(repositoryPath, ["fetch", "origin", $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+            result = await RunGitAsync(repositoryPath, ["fetch", sourceRemoteUrl, $"{remoteRef}:refs/remotes/{localRef}"], ct);
+        }
+        else
+        {
+            result = await RunGitAsync(repositoryPath,
+                ["fetch", "origin",
+                 $"{remoteRef}:refs/remotes/{localRef}",
+                 $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+        }
+
+        if (result.ExitCode == 0)
+        {
+            var mergeBase = await GetMergeBaseAsync(repositoryPath, $"origin/{baseRefName}", localRef, ct);
+
+            // localRef's own merge-base is itself exactly when the base branch's history now
+            // literally incorporates it by reference — a real 2-parent merge commit (localRef
+            // becomes its second parent) or a plain fast-forward (the base's tip becomes localRef
+            // outright). Diffing it against itself would show nothing. Squash and rebase merges
+            // instead create brand-new commits that never reference localRef's original commits,
+            // so it stays outside the base branch's ancestry and the plain merge-base below
+            // already isolates the PR's own changes correctly — using mergeCommitSha^ there too
+            // would be wrong (for rebase specifically, it's just the second-to-last rebased
+            // commit, silently dropping every earlier commit's changes from the diff).
+            if (mergeBase == localRef && mergeCommitSha is { Length: > 0 })
+            {
+                var verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+                if (verifyMerge.ExitCode == 0) return new PullRequestRefResolution(mergeCommitSha, $"{mergeCommitSha}^");
+            }
+
+            // For a closed-without-merging PR (declined/abandoned), the source branch may have
+            // moved on or been reused since — pin to the exact commit the PR actually contained
+            // when it was open, if the provider recorded one and it's still reachable.
+            var compareRef = localRef;
+            if (sourcePinnedCommit is { Length: > 0 })
+            {
+                var verifyPinned = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{sourcePinnedCommit}^{{commit}}"], ct);
+                if (verifyPinned.ExitCode == 0)
+                {
+                    compareRef = sourcePinnedCommit;
+                    mergeBase  = await GetMergeBaseAsync(repositoryPath, $"origin/{baseRefName}", compareRef, ct);
+                }
+            }
+
+            return new PullRequestRefResolution(compareRef, null, mergeBase);
+        }
+
+        var err = result.StandardError.Trim();
+
+        // Some hosts (seen on Azure DevOps) refuse to fetch an arbitrary commit SHA directly,
+        // even one that's perfectly reachable — only named refs are fetchable. The base-branch
+        // refspec above is a separate part of the same command, so if remoteRef is a SHA and it
+        // was actually merged (a real merge, not a squash), it likely came along for free as
+        // part of that branch's history. Use it directly in that case — no local ref needed.
+        if (IsCommitSha(remoteRef))
+        {
+            var verify = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{remoteRef}^{{commit}}"], ct);
+            if (verify.ExitCode == 0) return new PullRequestRefResolution(remoteRef, null);
+        }
+
+        // Last resort for a squash merge: the original source commits are gone for good (squashing
+        // never keeps them reachable anywhere, unlike a real merge), but the squash commit itself —
+        // sitting right there on the base branch — contains exactly the same file changes. Diffing
+        // it against its own parent reproduces the PR's diff without needing the source at all.
+        if (mergeCommitSha is { Length: > 0 })
+        {
+            var verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+            if (verifyMerge.ExitCode != 0)
+            {
+                await RunGitAsync(repositoryPath, ["fetch", "origin", $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+                verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+            }
+            if (verifyMerge.ExitCode == 0)
+                return new PullRequestRefResolution(mergeCommitSha, $"{mergeCommitSha}^");
+        }
+
+        if (err.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "This pull request's source commit is no longer available — likely because its " +
+                "branch was deleted after merging (e.g. a squash merge) and the host doesn't keep " +
+                $"the original commits reachable any other way. ({err})");
+
+        throw new InvalidOperationException(err is { Length: > 0 } ? err : $"git fetch exited with code {result.ExitCode}");
+    }
+
+    private static bool IsCommitSha(string value) => value.Length == 40 && value.All(Uri.IsHexDigit);
+
+    // The base branch keeps moving after a PR forks off it, so diffing against its current tip
+    // drags in every unrelated commit merged since as spurious deletions. The merge-base (fork
+    // point) isolates just the PR's own changes. Returns null (falling back to the raw base ref)
+    // if it can't be determined, e.g. unrelated histories.
+    private static async Task<string?> GetMergeBaseAsync(string repositoryPath, string baseRef, string compareRef, CancellationToken ct)
+    {
+        var result = await RunGitAsync(repositoryPath, ["merge-base", baseRef, compareRef], ct);
+        return result.ExitCode == 0 ? result.StandardOutput.Trim() : null;
     }
 
     public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)

@@ -7,6 +7,6 @@ public class ClaudeCredentials
     public long   ExpiresAt        { get; set; }  // Unix ms
     public string SubscriptionType { get; set; } = string.Empty;
 
-    // Access tokens are short-lived (~8h). ClaudeAuthService uses the CLI to refresh them.
+    // Access tokens are short-lived (~8h). ClaudeAuthService refreshes them via the OAuth token endpoint.
     public bool IsExpired => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() > ExpiresAt;
 }

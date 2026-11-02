@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using DiffThis.AI.OpenAI.Models;
+using DiffThis.Core.Services;
 
 namespace DiffThis.AI.OpenAI.Services;
 
@@ -9,6 +10,7 @@ public class OpenAiModelService : IOpenAiModelService
     private const string ModelsKey = "openai_codex_models";
     private const string FetchedAtKey = "openai_codex_models_fetched_at";
     private readonly OpenAiAuthService _auth;
+    private readonly ISettingsService  _settings;
     private List<OpenAiModel> _models = [];
 
     public IReadOnlyList<OpenAiModel> Models => _models;
@@ -18,12 +20,19 @@ public class OpenAiModelService : IOpenAiModelService
 
     public event Action? ModelsChanged;
 
-    public OpenAiModelService(IOpenAiAuthService auth)
+    public OpenAiModelService(IOpenAiAuthService auth, ISettingsService settings)
     {
         _auth = auth as OpenAiAuthService
             ?? throw new InvalidOperationException("OpenAI models require the Codex CLI service.");
+        _settings = settings;
         Load();
         EnsureDefaultModel();
+
+        // EnsureDefaultModel always leaves at least the placeholder "default" entry,
+        // so a null LastFetchedAt (not model count) is what signals "never actually
+        // fetched from the CLI" and triggers the first-run fetch.
+        if (ModelAutoRefresh.ShouldRefresh(_models.Count, LastFetchedAt, _settings))
+            _ = RefreshAsync();
     }
 
     public async Task RefreshAsync(CancellationToken ct = default)
@@ -171,8 +180,8 @@ public class OpenAiModelService : IOpenAiModelService
     {
         try
         {
-            _models = JsonSerializer.Deserialize<List<OpenAiModel>>(Preferences.Get(ModelsKey, "[]")) ?? [];
-            var fetchedAt = Preferences.Get(FetchedAtKey, "");
+            _models = JsonSerializer.Deserialize<List<OpenAiModel>>(LocalJsonStore.Get(ModelsKey, "[]")) ?? [];
+            var fetchedAt = LocalJsonStore.Get(FetchedAtKey, "");
             LastFetchedAt = string.IsNullOrWhiteSpace(fetchedAt) ? null : DateTime.Parse(fetchedAt).ToUniversalTime();
         }
         catch { _models = []; }
@@ -188,8 +197,8 @@ public class OpenAiModelService : IOpenAiModelService
     {
         try
         {
-            Preferences.Set(ModelsKey, JsonSerializer.Serialize(_models));
-            Preferences.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
+            LocalJsonStore.Set(ModelsKey, JsonSerializer.Serialize(_models));
+            LocalJsonStore.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
         }
         catch { }
     }
