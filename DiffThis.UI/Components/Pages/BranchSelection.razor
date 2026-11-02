@@ -191,6 +191,10 @@
 {
     <div class="modal-backdrop">
         <div class="modal" @onclick:stopPropagation>
+            @if (!string.IsNullOrEmpty(_signInReopenError))
+            {
+                <p class="modal-body" style="color:var(--del-fg)">@_signInReopenError</p>
+            }
             @if (!_signInIsOption)
             {
                 @* Reached with _prProvider == null for an unrecognized host — DetectProviderAsync
@@ -568,6 +572,10 @@
         _fetchCts?.Dispose();
         _copyToastCts?.Cancel();
         _copyToastCts?.Dispose();
+        _bbSignInCts?.Cancel();
+        _bbSignInCts?.Dispose();
+        _adoSignInCts?.Cancel();
+        _adoSignInCts?.Dispose();
         GitHubAuth.StateChanged -= OnGitHubAuthChanged;
         GitLabAuth.StateChanged -= OnGitLabAuthChanged;
     }
@@ -668,13 +676,14 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void ShowSignInModal()
+    private void ShowSignInModal(string? reopenReason = null)
     {
         _signInIsOption     = true;
         _selfHostedToken    = "";
         _selfHostedTokenError = null;
         _bbUseToken         = false;
         _adoUseToken        = false;
+        _signInReopenError  = reopenReason;
         _showSignInModal = true;
     }
 
@@ -684,7 +693,13 @@
         _ghDeviceFlow = null;
         _glDeviceFlow = null;
         _codeCopied = false;
+        _signInReopenError = null;
         _copyToastCts?.Cancel();
+        // Cancel an in-flight Bitbucket/Azure DevOps browser sign-in so its loopback listener
+        // releases its fixed port immediately instead of sitting on it for the full 5-minute
+        // timeout, and so completing the browser flow after Cancel can't still save credentials.
+        _bbSignInCts?.Cancel();
+        _adoSignInCts?.Cancel();
     }
 
     private async Task StartInlineGitHubSignIn()
@@ -735,7 +750,9 @@
     {
         _bbSigningIn = true;
         StateHasChanged();
-        var ok = await BitbucketAuth.SignInWithBrowserAsync();
+        _bbSignInCts?.Dispose();
+        _bbSignInCts = new CancellationTokenSource();
+        var ok = await BitbucketAuth.SignInWithBrowserAsync(_bbSignInCts.Token);
         _bbSigningIn = false;
         if (ok)
         {
@@ -763,7 +780,9 @@
     {
         _adoSigningIn = true;
         StateHasChanged();
-        var ok = await AzureDevOpsAuth.SignInWithBrowserAsync();
+        _adoSignInCts?.Dispose();
+        _adoSignInCts = new CancellationTokenSource();
+        var ok = await AzureDevOpsAuth.SignInWithBrowserAsync(_adoSignInCts.Token);
         _adoSigningIn = false;
         if (ok)
         {
@@ -811,7 +830,7 @@
         // user out to Settings.
         if (IsAuthError(prError))
         {
-            ShowSignInModal();
+            ShowSignInModal(prError);
             prError = "";
         }
 
@@ -854,6 +873,9 @@
     }
 
     private CancellationTokenSource? _copyToastCts;
+    private CancellationTokenSource? _bbSignInCts;
+    private CancellationTokenSource? _adoSignInCts;
+    private string? _signInReopenError;
 
     private async Task CopyDeviceCode(string code)
     {

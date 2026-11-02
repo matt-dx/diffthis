@@ -515,7 +515,7 @@ public class PullRequestService(
         // SSH: git@ssh.dev.azure.com:v3/org/project/repo
         var ssh = Regex.Match(url, @"^[\w.-]+@ssh\.dev\.azure\.com:v3/(?<org>[^/]+)/(?<project>[^/]+)/(?<repo>[^/]+)$");
         if (ssh.Success)
-            return (ssh.Groups["org"].Value, Uri.UnescapeDataString(ssh.Groups["project"].Value), ssh.Groups["repo"].Value);
+            return (ssh.Groups["org"].Value, Uri.UnescapeDataString(ssh.Groups["project"].Value), Uri.UnescapeDataString(ssh.Groups["repo"].Value));
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
 

@@ -142,15 +142,29 @@ public class GitLabAuthService : IGitLabAuthService
                 {
                     // GitLab returns 400 for "authorization_pending" — inspect the body before giving up
                     var pendingBody = await resp.Content.ReadAsStringAsync(ct);
+                    string? errorCode = null;
                     try
                     {
                         using var pendingDoc = JsonDocument.Parse(pendingBody);
-                        if (pendingDoc.RootElement.TryGetProperty("error", out var pendingErr)
-                            && pendingErr.GetString() is "authorization_pending" or "slow_down")
-                            continue;
+                        errorCode = pendingDoc.RootElement.TryGetProperty("error", out var pendingErr) ? pendingErr.GetString() : null;
                     }
-                    catch { /* fall through to retry */ }
-                    continue;
+                    catch { /* couldn't parse the body — keep polling, let the deadline time it out */ }
+
+                    if (errorCode is "authorization_pending" or null) continue;
+                    if (errorCode == "slow_down") { interval += 5; continue; }
+
+                    // Any other error is terminal (access_denied, expired_token, ...) — stop polling
+                    // now instead of leaving the user on "Waiting for authorization" until expiresIn
+                    // elapses and reporting an inaccurate timeout.
+                    State     = GitLabAuthState.NotFound;
+                    LastError = errorCode switch
+                    {
+                        "access_denied" => "Sign-in was denied.",
+                        "expired_token" => "The sign-in code expired. Please try again.",
+                        _               => $"GitLab sign-in failed: {errorCode}",
+                    };
+                    StateChanged?.Invoke();
+                    return;
                 }
 
                 var body = await resp.Content.ReadAsStringAsync(ct);
