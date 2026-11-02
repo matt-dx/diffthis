@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using DiffThis.Core.Models;
@@ -7,6 +8,17 @@ namespace DiffThis.Core.Services;
 public class GitService : IGitService
 {
     private sealed record GitResult(int ExitCode, string StandardOutput, string StandardError);
+
+    // Two `git fetch` processes against the same repo race to update the same
+    // refs/remotes/origin/* refs (git uses a compare-and-swap ref update), which fails with
+    // "cannot lock ref ... is at X but expected Y". This can happen for real here: the branches
+    // page kicks off a background FetchAndRefreshBranchesAsync, and selecting a PR to compare
+    // can trigger FetchPullRequestRefAsync before that background fetch finishes. Serialize all
+    // fetches per repository path to avoid the race.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _fetchLocks = new(StringComparer.OrdinalIgnoreCase);
+
+    private static SemaphoreSlim GetFetchLock(string repositoryPath) =>
+        _fetchLocks.GetOrAdd(Path.GetFullPath(repositoryPath), _ => new SemaphoreSlim(1, 1));
 
     // CreateNoWindow = true prevents Windows from opening a console window when git.exe
     // (a console subsystem binary) is spawned from a GUI process such as MAUI. Without
@@ -87,8 +99,14 @@ public class GitService : IGitService
 
     public async Task<bool> FetchAsync(string repositoryPath, CancellationToken ct = default)
     {
-        var result = await RunGitAsync(repositoryPath, ["fetch", "--prune"], ct);
-        return result.ExitCode == 0;
+        var gate = GetFetchLock(repositoryPath);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var result = await RunGitAsync(repositoryPath, ["fetch", "--prune"], ct);
+            return result.ExitCode == 0;
+        }
+        finally { gate.Release(); }
     }
 
     public async Task<DiffResult> GetDiffAsync(string repositoryPath, string baseBranch, string compareBranch, CancellationToken ct = default, int contextLines = 3)
@@ -133,6 +151,17 @@ public class GitService : IGitService
     }
 
     public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, CancellationToken ct = default)
+    {
+        var gate = GetFetchLock(repositoryPath);
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, ct);
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, CancellationToken ct)
     {
         var result = await RunGitAsync(repositoryPath,
             ["fetch", "origin",
