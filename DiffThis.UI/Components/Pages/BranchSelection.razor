@@ -78,6 +78,10 @@
                                     {
                                         <span class="pr-badge pr-badge-draft">Draft</span>
                                     }
+                                    else if (prState == PullRequestState.Open)
+                                    {
+                                        <span class="pr-badge pr-badge-ready">Ready</span>
+                                    }
                                     @if (pr.IsMerged)
                                     {
                                         <span class="pr-badge pr-badge-merged">Merged</span>

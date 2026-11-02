@@ -295,7 +295,8 @@ h1.page-h1   { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
 }
-.pr-badge-draft       { background: var(--bg); color: var(--fg-muted); border: 1px solid var(--border); }
+.pr-badge-draft       { background: none; color: var(--fg-muted); border: 1px solid var(--fg-muted); }
+.pr-badge-ready       { background: none; color: var(--add-fg); border: 1px solid var(--add-fg); }
 .pr-badge-merged      { background: var(--primary); color: var(--primary-fg); }
 .pr-badge-unavailable { background: none; color: var(--del-fg); border: 1px solid var(--del-fg); }
 .pr-item-meta { font-size: 11px; color: var(--fg-secondary); margin-top: 4px; }
