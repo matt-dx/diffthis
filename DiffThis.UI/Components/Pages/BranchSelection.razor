@@ -657,6 +657,18 @@
             return;
         }
 
+        // Each auth service restores stored credentials asynchronously from a fire-and-forget
+        // constructor-time task — reading .State before that finishes can see a stale NotFound
+        // and open the sign-in modal even though valid credentials are seconds away from loading.
+        await (_prProvider.Kind switch
+        {
+            GitProviderKind.GitHub         => GitHubAuth.InitializationTask,
+            GitProviderKind.GitLab         => GitLabAuth.InitializationTask,
+            GitProviderKind.BitbucketCloud => BitbucketAuth.InitializationTask,
+            GitProviderKind.AzureDevOps    => AzureDevOpsAuth.InitializationTask,
+            _ => Task.CompletedTask,
+        });
+
         var ready = _prProvider.Kind switch
         {
             GitProviderKind.GitHub         => GitHubAuth.State == GitHubAuthState.Authenticated,
@@ -810,19 +822,37 @@
         await LoadPullRequestsAsync(prState);
     }
 
+    private int _prLoadGeneration;
+
+    // Open and Closed can both be mid-load at once (e.g. switching tabs quickly, or the upfront
+    // ready-check kicking one off right as a tab switch starts another). They share prsLoading/
+    // prError, so an older, slower request finishing after a newer one would otherwise stomp on
+    // the current tab's spinner, replace its result with a stale error, or reopen sign-in for a
+    // problem that's already resolved. A generation counter lets only the latest request win.
     private async Task LoadPullRequestsAsync(PullRequestState state)
     {
         if (string.IsNullOrEmpty(RepoPath)) return;
+        var myGeneration = ++_prLoadGeneration;
         prsLoading = true;
         prError = "";
         StateHasChanged();
         try
         {
             var result = await PullRequests.GetPullRequestsAsync(RepoPath, state);
+            if (myGeneration != _prLoadGeneration) return;
             if (state == PullRequestState.Open) openPrs = result; else closedPrs = result;
         }
-        catch (Exception ex) { prError = ex.Message; }
-        finally { prsLoading = false; }
+        catch (Exception ex)
+        {
+            if (myGeneration != _prLoadGeneration) return;
+            prError = ex.Message;
+        }
+        finally
+        {
+            if (myGeneration == _prLoadGeneration) prsLoading = false;
+        }
+
+        if (myGeneration != _prLoadGeneration) return;
 
         // An auth problem slipped through the upfront check (e.g. a token was revoked or a refresh
         // failed mid-session). _prProvider is already known at this point, so offer the same inline

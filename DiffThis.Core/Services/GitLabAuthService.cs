@@ -28,7 +28,16 @@ public class GitLabAuthService : IGitLabAuthService
 
     private CancellationTokenSource? _pollCts;
 
+    // GitLab rotates refresh tokens — using one invalidates it. Two overlapping callers (e.g. the
+    // Open and Closed PR tabs loading at once) reading the same expired token set before either
+    // has persisted a refresh would both submit the same refresh_token; the second submission is
+    // then rejected as already-used even though the first one just succeeded. Serializing the
+    // whole read/refresh/persist sequence, and re-reading the stored tokens after acquiring the
+    // gate, lets a caller that waited pick up the refresh the first caller already did.
+    private readonly SemaphoreSlim _tokenRefreshGate = new(1, 1);
+
     public GitLabAuthState State     { get; private set; } = GitLabAuthState.NotFound;
+    public Task InitializationTask { get; }
     public string?         Username  { get; private set; }
     public string?         LastError { get; private set; }
 
@@ -38,7 +47,7 @@ public class GitLabAuthService : IGitLabAuthService
     {
         _settings = settings;
         Username  = Preferences.Get(UsernameKey, (string?)null);
-        _ = InitializeStateAsync();
+        InitializationTask = InitializeStateAsync();
     }
 
     public async Task<string?> GetTokenAsync() => (await GetValidTokensAsync())?.AccessToken;
@@ -256,41 +265,46 @@ public class GitLabAuthService : IGitLabAuthService
     // access_token and leaving a successful sign-in to silently stop working after expiry.
     private async Task<OAuthTokens?> GetValidTokensAsync()
     {
-        var stored = await GetStoredTokensAsync();
-        if (stored is null || string.IsNullOrEmpty(stored.AccessToken)) return null;
-
-        if (DateTimeOffset.UtcNow < DateTimeOffset.FromUnixTimeMilliseconds(stored.ExpiresAt) - TimeSpan.FromMinutes(2))
-            return stored;
-
-        if (string.IsNullOrEmpty(stored.RefreshToken)) return null;
-
-        var clientId = _settings.GitLabOAuthClientId.Trim();
-        if (string.IsNullOrEmpty(clientId)) clientId = DefaultClientId;
-
+        await _tokenRefreshGate.WaitAsync();
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, AccessTokenUrl)
+            var stored = await GetStoredTokensAsync();
+            if (stored is null || string.IsNullOrEmpty(stored.AccessToken)) return null;
+
+            if (DateTimeOffset.UtcNow < DateTimeOffset.FromUnixTimeMilliseconds(stored.ExpiresAt) - TimeSpan.FromMinutes(2))
+                return stored;
+
+            if (string.IsNullOrEmpty(stored.RefreshToken)) return null;
+
+            var clientId = _settings.GitLabOAuthClientId.Trim();
+            if (string.IsNullOrEmpty(clientId)) clientId = DefaultClientId;
+
+            try
             {
-                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                using var req = new HttpRequestMessage(HttpMethod.Post, AccessTokenUrl)
                 {
-                    ["grant_type"]    = "refresh_token",
-                    ["refresh_token"] = stored.RefreshToken,
-                    ["client_id"]     = clientId,
-                }),
-            };
-            req.Headers.Add("Accept", "application/json");
+                    Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                    {
+                        ["grant_type"]    = "refresh_token",
+                        ["refresh_token"] = stored.RefreshToken,
+                        ["client_id"]     = clientId,
+                    }),
+                };
+                req.Headers.Add("Accept", "application/json");
 
-            var resp = await _http.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return null;
+                var resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return null;
 
-            var refreshed = ParseTokenResponse(await resp.Content.ReadAsStringAsync());
-            if (refreshed is null || string.IsNullOrEmpty(refreshed.AccessToken)) return null;
+                var refreshed = ParseTokenResponse(await resp.Content.ReadAsStringAsync());
+                if (refreshed is null || string.IsNullOrEmpty(refreshed.AccessToken)) return null;
 
-            refreshed.RefreshToken ??= stored.RefreshToken;
-            await TryStoreTokensAsync(refreshed);
-            return refreshed;
+                refreshed.RefreshToken ??= stored.RefreshToken;
+                await TryStoreTokensAsync(refreshed);
+                return refreshed;
+            }
+            catch { return null; }
         }
-        catch { return null; }
+        finally { _tokenRefreshGate.Release(); }
     }
 
     private static OAuthTokens? ParseTokenResponse(string body)

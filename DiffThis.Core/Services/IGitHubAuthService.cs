@@ -21,6 +21,12 @@ public interface IGitHubAuthService
     /// Blazor components can call <c>StateHasChanged</c>.
     event Action? StateChanged;
 
+    /// Completes once startup's stored-credential check has run and <see cref="State"/> reflects
+    /// it. A caller that reads <see cref="State"/> right after this service is constructed (e.g.
+    /// immediately on page load) should await this first — otherwise it can race the async
+    /// SecureStorage read and see a stale <see cref="GitHubAuthState.NotFound"/>.
+    Task InitializationTask { get; }
+
     /// Returns the stored GitHub OAuth token, or null if not authenticated.
     Task<string?> GetTokenAsync();
 

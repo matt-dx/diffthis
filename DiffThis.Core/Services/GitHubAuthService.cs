@@ -28,6 +28,7 @@ public class GitHubAuthService : IGitHubAuthService
     private CancellationTokenSource? _pollCts;
 
     public GitHubAuthState State     { get; private set; } = GitHubAuthState.NotFound;
+    public Task InitializationTask { get; }
     public string?         Username  { get; private set; }
     public string?         LastError { get; private set; }
 
@@ -37,7 +38,7 @@ public class GitHubAuthService : IGitHubAuthService
     {
         _settings = settings;
         Username  = Preferences.Get(UsernameKey, (string?)null);
-        _ = InitializeStateAsync();
+        InitializationTask = InitializeStateAsync();
     }
 
     public Task<string?> GetTokenAsync() => GetStoredTokenAsync();

@@ -12,6 +12,11 @@ public interface IAzureDevOpsAuthService
 
     event Action? StateChanged;
 
+    /// Completes once startup's stored-credential check has run and <see cref="State"/> reflects
+    /// it — await before reading <see cref="State"/> right after construction (e.g. on page load)
+    /// to avoid racing the async SecureStorage read.
+    Task InitializationTask { get; }
+
     /// Returns the Authorization header to send on Azure DevOps REST calls — Bearer for a
     /// browser (OAuth) sign-in, refreshing it first if it's close to expiry, or Basic for a
     /// pasted Personal Access Token — or null if not connected.

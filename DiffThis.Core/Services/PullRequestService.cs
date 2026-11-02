@@ -55,15 +55,28 @@ public class PullRequestService(
         var token = await gitHosts.GetTokenAsync(selfHosted.Id)
             ?? throw new InvalidOperationException($"No token saved for '{host}'. Add one under Settings → Git Hosts.");
 
+        var authority = ExtractHostAuthority(remoteUrl) ?? host;
+
         return selfHosted.Kind switch
         {
-            GitProviderKind.GitHubEnterprise  => await GetGitHubAsync($"https://{host}/api/v3", remoteUrl, state, ct, token),
-            GitProviderKind.GitLabSelfManaged => await GetGitLabAsync($"https://{host}/api/v4", remoteUrl, state, ct, token),
-            GitProviderKind.BitbucketServer   => await GetBitbucketServerAsync($"https://{host}", remoteUrl, state, ct, token),
-            GitProviderKind.Gitea             => await GetGiteaAsync($"https://{host}/api/v1", remoteUrl, state, ct, token),
+            GitProviderKind.GitHubEnterprise  => await GetGitHubAsync($"https://{authority}/api/v3", remoteUrl, state, ct, token),
+            GitProviderKind.GitLabSelfManaged => await GetGitLabAsync($"https://{authority}/api/v4", remoteUrl, state, ct, token),
+            GitProviderKind.BitbucketServer   => await GetBitbucketServerAsync($"https://{authority}", remoteUrl, state, ct, token),
+            GitProviderKind.Gitea             => await GetGiteaAsync($"https://{authority}/api/v1", remoteUrl, state, ct, token),
             _ => throw new InvalidOperationException($"Unsupported provider type for host '{host}'."),
         };
     }
+
+    /// Like <see cref="ExtractHost"/> (bare hostname, used to look up the registered Git Host by
+    /// name), but keeps a nonstandard port when the remote itself is an HTTPS URL — a self-hosted
+    /// server's REST API lives on the same HTTPS port as its git-over-HTTP remote. An SSH remote's
+    /// port (if any) isn't assumed to match, since there's no guarantee the API shares it.
+    private static string? ExtractHostAuthority(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+        && !uri.IsDefaultPort
+            ? $"{uri.Host}:{uri.Port}"
+            : ExtractHost(url);
 
     /// Resolves which provider a repository's remote belongs to, without making any API call —
     /// used to decide whether an inline sign-in prompt is possible before attempting a fetch.
@@ -128,6 +141,10 @@ public class PullRequestService(
                 BaseRefName       = d.Base?.Ref ?? string.Empty,
                 HeadRefName       = d.Head?.Ref ?? string.Empty,
                 SourceRemoteRef   = $"refs/pull/{d.Number}/head",
+                // Only when actually merged — GitHub can populate merge_commit_sha for an open PR
+                // too (a speculative test-merge for the mergeability check), which isn't a real
+                // merge and shouldn't be used to reconstruct one.
+                MergeCommitSha    = d.MergedAt is not null ? d.MergeCommitSha : null,
                 IsCrossRepository = !string.Equals(d.Head?.Repo?.FullName, repoFullName, StringComparison.OrdinalIgnoreCase),
                 IsDraft           = d.Draft,
                 IsMerged          = d.MergedAt is not null,
@@ -163,6 +180,7 @@ public class PullRequestService(
                 BaseRefName       = d.Base?.Ref ?? string.Empty,
                 HeadRefName       = d.Head?.Ref ?? string.Empty,
                 SourceRemoteRef   = $"refs/pull/{d.Number}/head",
+                MergeCommitSha    = d.MergedAt is not null ? d.MergeCommitSha : null,
                 IsCrossRepository = !string.Equals(d.Head?.Repo?.FullName, repoFullName, StringComparison.OrdinalIgnoreCase),
                 IsDraft           = d.Draft,
                 IsMerged          = d.MergedAt is not null,
@@ -209,6 +227,11 @@ public class PullRequestService(
                 BaseRefName       = d.TargetBranch,
                 HeadRefName       = d.SourceBranch,
                 SourceRemoteRef   = $"refs/merge-requests/{d.Iid}/head",
+                // Prefer squash_commit_sha when GitLab used squash (merge_commit_sha is then
+                // either absent or points at an unrelated commit); only when actually merged.
+                MergeCommitSha    = string.Equals(d.State, "merged", StringComparison.OrdinalIgnoreCase)
+                    ? d.SquashCommitSha ?? d.MergeCommitSha
+                    : null,
                 IsCrossRepository = d.SourceProjectId.HasValue && d.ProjectId.HasValue && d.SourceProjectId != d.ProjectId,
                 IsDraft           = d.Draft,
                 IsMerged          = string.Equals(d.State, "merged", StringComparison.OrdinalIgnoreCase),
@@ -319,6 +342,9 @@ public class PullRequestService(
                 BaseRefName     = d.ToRef?.DisplayId ?? string.Empty,
                 HeadRefName     = d.FromRef?.DisplayId ?? string.Empty,
                 SourceRemoteRef = $"refs/pull-requests/{d.Id}/from",
+                MergeCommitSha  = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase)
+                    ? d.Properties?.MergeCommit?.Id
+                    : null,
                 IsDraft         = false, // Bitbucket Server has no draft-PR concept
                 IsMerged        = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase),
                 UpdatedAt       = DateTimeOffset.FromUnixTimeMilliseconds(d.UpdatedDate),
@@ -377,10 +403,16 @@ public class PullRequestService(
                 // it directly; for an abandoned one it's the exact content the PR had, pinning the
                 // diff against a branch that may have moved on or been reused since.
                 SourcePinnedCommit = d.LastMergeSourceCommit?.CommitId,
-                MergeCommitSha  = d.LastMergeCommit?.CommitId,
+                // Only when actually completed — Azure DevOps populates lastMergeCommit for an
+                // active (or abandoned) PR too, as a speculative test-merge for its mergeability
+                // check, which isn't a real merge and shouldn't be used to reconstruct one.
+                MergeCommitSha  = string.Equals(d.Status, "completed", StringComparison.OrdinalIgnoreCase)
+                    ? d.LastMergeCommit?.CommitId
+                    : null,
                 SourceAvailability = string.Equals(d.Status, "active", StringComparison.OrdinalIgnoreCase)
                     ? PullRequestSourceAvailability.Available
-                    : d.LastMergeCommit?.CommitId is { Length: > 0 }
+                    : string.Equals(d.Status, "completed", StringComparison.OrdinalIgnoreCase)
+                        && d.LastMergeCommit?.CommitId is { Length: > 0 }
                         ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
                         : PullRequestSourceAvailability.Unknown,
                 SourceRemoteUrl = d.ForkSource?.Repository?.RemoteUrl,
@@ -551,6 +583,7 @@ public class PullRequestService(
         public GitHubRefDto? Head { get; set; }
         public bool Draft { get; set; }
         public DateTimeOffset? MergedAt { get; set; }
+        public string? MergeCommitSha { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
     }
 
@@ -575,6 +608,8 @@ public class PullRequestService(
         public string State { get; set; } = string.Empty;
         public int? ProjectId { get; set; }
         public int? SourceProjectId { get; set; }
+        public string? MergeCommitSha { get; set; }
+        public string? SquashCommitSha { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
     }
 
@@ -618,11 +653,14 @@ public class PullRequestService(
         public BitbucketServerRefDto? ToRef { get; set; }
         public string State { get; set; } = string.Empty;
         public long UpdatedDate { get; set; }
+        public BitbucketServerPropertiesDto? Properties { get; set; }
     }
 
     private sealed class BitbucketServerAuthorDto { public BitbucketServerUserDto? User { get; set; } }
     private sealed class BitbucketServerUserDto { public string DisplayName { get; set; } = string.Empty; }
     private sealed class BitbucketServerRefDto { public string DisplayId { get; set; } = string.Empty; }
+    private sealed class BitbucketServerPropertiesDto { public BitbucketServerCommitRefDto? MergeCommit { get; set; } }
+    private sealed class BitbucketServerCommitRefDto { public string? Id { get; set; } }
 
     private sealed class AdoPageDto { public List<AdoPrDto> Value { get; set; } = []; }
 

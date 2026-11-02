@@ -1302,7 +1302,16 @@
         BitbucketAuth.StateChanged        -= OnBitbucketStateChanged;
         AzureDevOpsAuth.StateChanged      -= OnAzureDevOpsStateChanged;
         GitHosts.Changed                  -= OnGitHostsChanged;
+        // Otherwise an in-flight browser sign-in's loopback listener keeps its fixed port
+        // occupied until its 5-minute timeout even after the user has navigated away.
+        _bitbucketSignInCts?.Cancel();
+        _bitbucketSignInCts?.Dispose();
+        _azureDevOpsSignInCts?.Cancel();
+        _azureDevOpsSignInCts?.Dispose();
     }
+
+    private CancellationTokenSource? _bitbucketSignInCts;
+    private CancellationTokenSource? _azureDevOpsSignInCts;
 
     private void AddOllamaEndpoint() =>
         OllamaEndpoints.AddEndpoint("Local", "http://localhost:11434");
@@ -1578,7 +1587,9 @@
     {
         _bitbucketOAuthSigningIn = true;
         StateHasChanged();
-        try { await BitbucketAuth.SignInWithBrowserAsync(); }
+        _bitbucketSignInCts?.Dispose();
+        _bitbucketSignInCts = new CancellationTokenSource();
+        try { await BitbucketAuth.SignInWithBrowserAsync(_bitbucketSignInCts.Token); }
         finally
         {
             _bitbucketOAuthSigningIn = false;
@@ -1603,7 +1614,9 @@
     {
         _azureDevOpsOAuthSigningIn = true;
         StateHasChanged();
-        try { await AzureDevOpsAuth.SignInWithBrowserAsync(); }
+        _azureDevOpsSignInCts?.Dispose();
+        _azureDevOpsSignInCts = new CancellationTokenSource();
+        try { await AzureDevOpsAuth.SignInWithBrowserAsync(_azureDevOpsSignInCts.Token); }
         finally
         {
             _azureDevOpsOAuthSigningIn = false;

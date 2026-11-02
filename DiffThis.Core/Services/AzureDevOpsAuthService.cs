@@ -29,6 +29,7 @@ public class AzureDevOpsAuthService : IAzureDevOpsAuthService
     private readonly HttpClient       _http = new();
 
     public AzureDevOpsAuthState State     { get; private set; } = AzureDevOpsAuthState.NotFound;
+    public Task InitializationTask { get; }
     public string?              Username  { get; private set; }
     public string?              LastError { get; private set; }
 
@@ -37,7 +38,7 @@ public class AzureDevOpsAuthService : IAzureDevOpsAuthService
     public AzureDevOpsAuthService(ISettingsService settings)
     {
         _settings = settings;
-        _ = InitializeStateAsync();
+        InitializationTask = InitializeStateAsync();
     }
 
     public async Task<AuthenticationHeaderValue?> GetAuthHeaderAsync()
