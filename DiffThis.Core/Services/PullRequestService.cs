@@ -298,7 +298,7 @@ public class PullRequestService(
                             : PullRequestSourceAvailability.Unknown,
                     SourceRemoteUrl   = isCrossRepo ? BuildCloneUrl(remoteUrl, d.Source?.Repository?.FullName) : null,
                     IsCrossRepository = isCrossRepo,
-                    IsDraft           = false, // Bitbucket Cloud has no draft-PR concept
+                    IsDraft           = d.Draft,
                     IsMerged          = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase),
                     UpdatedAt         = d.UpdatedOn,
                 };
@@ -626,6 +626,7 @@ public class PullRequestService(
         public BitbucketEndpointDto? Destination { get; set; }
         public BitbucketCommitDto? MergeCommit { get; set; }
         public string State { get; set; } = string.Empty;
+        public bool Draft { get; set; }
         public DateTimeOffset UpdatedOn { get; set; }
     }
 
