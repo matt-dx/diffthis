@@ -642,6 +642,10 @@
                     {
                         <span class="setting-desc" style="margin:0">Saved</span>
                     }
+                    else if (_gitHostErrorId == hostId)
+                    {
+                        <span class="setting-desc" style="margin:0;color:var(--del-fg)">Unable to securely store the token on this device.</span>
+                    }
                 </div>
             </div>
         }
@@ -1226,6 +1230,7 @@
     private string         _azureDevOpsPat = "";
     private readonly Dictionary<string, string> _gitHostTokenInputs = [];
     private string?        _gitHostSavedId;
+    private string?        _gitHostErrorId;
     private static readonly GitProviderKind[] SelfHostedProviderKinds =
     [
         GitProviderKind.GitHubEnterprise,
@@ -1639,7 +1644,13 @@
     {
         var token = _gitHostTokenInputs.GetValueOrDefault(id, "");
         if (string.IsNullOrWhiteSpace(token)) return;
-        await GitHosts.SetTokenAsync(id, token);
+        _gitHostErrorId = null;
+        if (!await GitHosts.SetTokenAsync(id, token))
+        {
+            _gitHostErrorId = id;
+            StateHasChanged();
+            return;
+        }
         _gitHostTokenInputs.Remove(id);
         _gitHostSavedId = id;
         StateHasChanged();

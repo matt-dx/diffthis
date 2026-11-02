@@ -60,10 +60,10 @@ public class GitHostService : IGitHostService
         }
     }
 
-    public async Task SetTokenAsync(string hostId, string token)
+    public async Task<bool> SetTokenAsync(string hostId, string token)
     {
-        try { await SecureStorage.Default.SetAsync(TokenKey(hostId), token); }
-        catch { /* best effort */ }
+        try { await SecureStorage.Default.SetAsync(TokenKey(hostId), token); return true; }
+        catch { return false; }
     }
 
     private static string TokenKey(string hostId) => $"githost_token_{hostId}";

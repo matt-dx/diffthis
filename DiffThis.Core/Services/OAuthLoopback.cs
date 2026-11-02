@@ -99,12 +99,14 @@ internal static class OAuthLoopback
 
     private static async Task WriteHtmlResponseAsync(HttpListenerContext context, string title, string message)
     {
+        var safeTitle   = WebUtility.HtmlEncode(title);
+        var safeMessage = WebUtility.HtmlEncode(message);
         var html = $@"
-            <!doctype html><html><head><meta charset=""utf-8""><title>{title}</title>
+            <!doctype html><html><head><meta charset=""utf-8""><title>{safeTitle}</title>
             <style>body{{font-family:system-ui,sans-serif;background:#1e1e1e;color:#eee;display:flex;
             align-items:center;justify-content:center;height:100vh;margin:0}}
             .card{{text-align:center;padding:32px}}</style></head>
-            <body><div class=""card""><h2>{title}</h2><p>{message}</p></div></body></html>";
+            <body><div class=""card""><h2>{safeTitle}</h2><p>{safeMessage}</p></div></body></html>";
         var buffer = Encoding.UTF8.GetBytes(html);
         context.Response.ContentType = "text/html; charset=utf-8";
         context.Response.ContentLength64 = buffer.Length;

@@ -22,7 +22,25 @@ public static class LocalJsonStore
         lock (Lock)
         {
             EnsureLoaded();
-            return _values!.TryGetValue(key, out var value) ? value : defaultValue;
+            if (_values!.TryGetValue(key, out var value)) return value;
+
+            // Before this store existed, the three AI model services kept their catalogs (models,
+            // last-fetched timestamp, and per-provider extras like custom names/hidden flags/
+            // reasoning settings) in Preferences under these same key names. Migrate a value found
+            // there on first read so upgrading doesn't silently drop it back to defaults.
+            try
+            {
+                if (Preferences.ContainsKey(key))
+                {
+                    var legacy = Preferences.Get(key, defaultValue);
+                    _values[key] = legacy;
+                    Persist();
+                    return legacy;
+                }
+            }
+            catch { /* legacy storage unavailable — fall through to the default */ }
+
+            return defaultValue;
         }
     }
 

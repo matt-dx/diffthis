@@ -15,6 +15,11 @@ public class GitLabAuthService : IGitLabAuthService
     private const string OAuthTokenKey = "gitlab_oauth_token";
     private const string UsernameKey   = "gitlab_username";
 
+    // Sentinel "never expires" timestamp for tokens stored before refresh-token support was
+    // added (see GetStoredTokensAsync) — the max value DateTimeOffset.FromUnixTimeMilliseconds
+    // accepts, since long.MaxValue itself overflows that range.
+    private static readonly long NeverExpiresUnixMs = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
+
     private const string DeviceCodeUrl  = "https://gitlab.com/oauth/authorize_device";
     private const string AccessTokenUrl = "https://gitlab.com/oauth/token";
 
@@ -36,12 +41,12 @@ public class GitLabAuthService : IGitLabAuthService
         _ = InitializeStateAsync();
     }
 
-    public Task<string?> GetTokenAsync() => GetStoredTokenAsync();
+    public async Task<string?> GetTokenAsync() => (await GetValidTokensAsync())?.AccessToken;
 
     public async Task<bool> RefreshAsync()
     {
-        var stored = await GetStoredTokenAsync();
-        State = string.IsNullOrEmpty(stored) ? GitLabAuthState.NotFound : GitLabAuthState.Authenticated;
+        var stored = await GetValidTokensAsync();
+        State = stored is null ? GitLabAuthState.NotFound : GitLabAuthState.Authenticated;
         StateChanged?.Invoke();
         return State == GitLabAuthState.Authenticated;
     }
@@ -149,14 +154,10 @@ public class GitLabAuthService : IGitLabAuthService
                 }
 
                 var body = await resp.Content.ReadAsStringAsync(ct);
-                using var doc = JsonDocument.Parse(body);
-                var root = doc.RootElement;
+                var tokens = ParseTokenResponse(body);
+                if (tokens is null || string.IsNullOrEmpty(tokens.AccessToken)) continue;
 
-                if (!root.TryGetProperty("access_token", out var tokenProp)) continue;
-                var token = tokenProp.GetString();
-                if (string.IsNullOrEmpty(token)) continue;
-
-                if (!await TryStoreTokenAsync(token))
+                if (!await TryStoreTokensAsync(tokens))
                 {
                     State     = GitLabAuthState.NotFound;
                     LastError = "Unable to securely store GitLab credentials on this device.";
@@ -168,7 +169,7 @@ public class GitLabAuthService : IGitLabAuthService
                 LastError = null;
                 StateChanged?.Invoke();
 
-                _ = TryReadUsernameAsync(token);
+                _ = TryReadUsernameAsync(tokens.AccessToken);
                 return;
             }
             catch (OperationCanceledException) { break; }
@@ -225,8 +226,8 @@ public class GitLabAuthService : IGitLabAuthService
     {
         try
         {
-            var stored = await GetStoredTokenAsync();
-            if (!string.IsNullOrEmpty(stored))
+            var stored = await GetValidTokensAsync();
+            if (stored is not null)
             {
                 State = GitLabAuthState.Authenticated;
                 StateChanged?.Invoke();
@@ -235,25 +236,108 @@ public class GitLabAuthService : IGitLabAuthService
         catch { /* best effort */ }
     }
 
-    private static async Task<bool> TryStoreTokenAsync(string token)
+    // GitLab's OAuth access tokens expire (the device flow response includes a refresh_token and
+    // expires_in just like a normal Authorization Code flow) — reread the stored token set here
+    // and refresh it before it's handed to an API caller, instead of only ever storing the bare
+    // access_token and leaving a successful sign-in to silently stop working after expiry.
+    private async Task<OAuthTokens?> GetValidTokensAsync()
     {
-        try { await SecureStorage.Default.SetAsync(OAuthTokenKey, token); return true; }
-        catch { return false; }
+        var stored = await GetStoredTokensAsync();
+        if (stored is null || string.IsNullOrEmpty(stored.AccessToken)) return null;
+
+        if (DateTimeOffset.UtcNow < DateTimeOffset.FromUnixTimeMilliseconds(stored.ExpiresAt) - TimeSpan.FromMinutes(2))
+            return stored;
+
+        if (string.IsNullOrEmpty(stored.RefreshToken)) return null;
+
+        var clientId = _settings.GitLabOAuthClientId.Trim();
+        if (string.IsNullOrEmpty(clientId)) clientId = DefaultClientId;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, AccessTokenUrl)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["grant_type"]    = "refresh_token",
+                    ["refresh_token"] = stored.RefreshToken,
+                    ["client_id"]     = clientId,
+                }),
+            };
+            req.Headers.Add("Accept", "application/json");
+
+            var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var refreshed = ParseTokenResponse(await resp.Content.ReadAsStringAsync());
+            if (refreshed is null || string.IsNullOrEmpty(refreshed.AccessToken)) return null;
+
+            refreshed.RefreshToken ??= stored.RefreshToken;
+            await TryStoreTokensAsync(refreshed);
+            return refreshed;
+        }
+        catch { return null; }
     }
 
-    private static async Task<string?> GetStoredTokenAsync()
+    private static OAuthTokens? ParseTokenResponse(string body)
     {
         try
         {
-            var token = await SecureStorage.Default.GetAsync(OAuthTokenKey);
-            if (!string.IsNullOrEmpty(token)) return token;
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out _)) return null;
+
+            var accessToken  = root.GetProperty("access_token").GetString() ?? "";
+            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            var expiresIn    = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 7200;
+            return new OAuthTokens
+            {
+                AccessToken  = accessToken,
+                RefreshToken = refreshToken,
+                ExpiresAt    = DateTimeOffset.UtcNow.AddSeconds(expiresIn).ToUnixTimeMilliseconds(),
+            };
         }
-        catch { /* best effort */ }
-        return null;
+        catch { return null; }
+    }
+
+    private static async Task<bool> TryStoreTokensAsync(OAuthTokens tokens)
+    {
+        try { await SecureStorage.Default.SetAsync(OAuthTokenKey, JsonSerializer.Serialize(tokens)); return true; }
+        catch { return false; }
+    }
+
+    private static async Task<OAuthTokens?> GetStoredTokensAsync()
+    {
+        string? stored;
+        try { stored = await SecureStorage.Default.GetAsync(OAuthTokenKey); }
+        catch { return null; }
+
+        if (string.IsNullOrEmpty(stored)) return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<OAuthTokens>(stored);
+        }
+        catch (JsonException)
+        {
+            // Sign-ins from before refresh-token support stored the bare access_token string.
+            // Treat it as a still-valid, non-expiring token instead of silently signing the user
+            // out — a real 401 from a later API call still surfaces the usual re-sign-in prompt.
+            var legacy = new OAuthTokens { AccessToken = stored, ExpiresAt = NeverExpiresUnixMs };
+            await TryStoreTokensAsync(legacy);
+            return legacy;
+        }
     }
 
     private static void RemoveStoredToken()
     {
         try { SecureStorage.Default.Remove(OAuthTokenKey); } catch { /* best effort */ }
+    }
+
+    private sealed class OAuthTokens
+    {
+        public string  AccessToken  { get; set; } = "";
+        public string? RefreshToken { get; set; }
+        public long    ExpiresAt    { get; set; } // Unix ms
     }
 }

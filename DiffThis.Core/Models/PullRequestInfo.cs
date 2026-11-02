@@ -36,6 +36,12 @@ public class PullRequestInfo
 
     public PullRequestSourceAvailability SourceAvailability { get; set; } = PullRequestSourceAvailability.Available;
 
+    /// The fork's clone URL, set only when <see cref="IsCrossRepository"/> is true and the
+    /// provider exposes it (Bitbucket Cloud, Azure DevOps). <see cref="SourceRemoteRef"/> is a
+    /// branch name or commit on the FORK, not on "origin" — fetching it from origin would silently
+    /// resolve an unrelated same-named ref there instead, or fail outright.
+    public string? SourceRemoteUrl { get; set; }
+
     public bool IsCrossRepository { get; set; }
     public bool IsDraft { get; set; }
     public bool IsMerged { get; set; }

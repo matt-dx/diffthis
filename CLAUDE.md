@@ -78,7 +78,7 @@ Prompts are built by `PromptService`, which loads `review.md` / `explain.md` fro
 **Services** (all singletons, registered in `MauiProgram.cs`):
 
 - `IGitService` / `GitService` — git subprocess wrapper + unified diff parser; `GetDiffAsync` accepts a `contextLines` parameter (default 3) passed as `--unified=N` to `git diff`; also fetches branches/commits and resolves PR compare refs (`FetchPullRequestRefAsync`, with the merge-commit fallback described above)
-- `ISettingsService` / `SettingsService` — persists theme, font-ligatures toggle, recent-repo list, per-repo branch/PR-tab selection state, AI model/config preferences, OAuth client ID/secret overrides, and `DiffContextLines` (3/10/25/50) via MAUI `Preferences` API
+- `ISettingsService` / `SettingsService` — persists theme, font-ligatures toggle, recent-repo list, per-repo branch/PR-tab selection state, AI model/config preferences, OAuth client ID overrides, and `DiffContextLines` (3/10/25/50) via MAUI `Preferences` API; the Bitbucket OAuth client *secret* override is a genuine credential and is kept in `SecureStorage` instead, with an in-memory cache (`GetBitbucketOAuthClientSecretAsync`) since `Preferences`-backed settings are unencrypted
 - `IExportService` / `ExportService` — generates Markdown from a `DiffResult` and writes it to a file
 - `ILogService` / `LogService` — writes request/response/error entries per AI call to a daily log file under `%LOCALAPPDATA%\DiffThis\logs`, gated by `ISettingsService.AiLoggingEnabled`
 - `IPullRequestService` / `PullRequestService` — detects the PR provider from the repo's remote and lists PRs/MRs via that provider's REST API

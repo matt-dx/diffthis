@@ -21,5 +21,8 @@ public interface IGitHostService
     GitHostConfig? FindByHost(string host);
 
     Task<string?> GetTokenAsync(string hostId);
-    Task SetTokenAsync(string hostId, string token);
+
+    /// Stores the token securely. Returns false if secure storage failed (e.g. the platform
+    /// keystore is unavailable) — a caller must not treat this as a successful sign-in.
+    Task<bool> SetTokenAsync(string hostId, string token);
 }

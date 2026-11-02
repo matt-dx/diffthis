@@ -44,7 +44,22 @@ public class GitService : IGitService
 
         var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
+        try
+        {
+            await proc.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Callers (e.g. the per-repo fetch lock) rely on the process having actually
+            // stopped touching the working directory/refs once this call returns, even on
+            // cancellation — so kill it and wait for the real exit instead of abandoning it.
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            await proc.WaitForExitAsync(CancellationToken.None);
+            // stdoutTask/stderrTask were reading against `ct` too and may still be unobserved;
+            // drain them before `using var proc` disposes the streams out from under them.
+            try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+            throw;
+        }
 
         return new GitResult(proc.ExitCode, await stdoutTask, await stderrTask);
     }
@@ -150,25 +165,47 @@ public class GitService : IGitService
         };
     }
 
-    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, CancellationToken ct = default)
+    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, CancellationToken ct = default)
     {
+        if (isCrossRepository && string.IsNullOrEmpty(sourceRemoteUrl))
+            throw new InvalidOperationException(
+                "This pull request's source is a fork, but its clone URL couldn't be determined, " +
+                "so its changes can't be fetched.");
+
         var gate = GetFetchLock(repositoryPath);
         await gate.WaitAsync(ct);
         try
         {
-            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, ct);
+            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, sourceRemoteUrl, ct);
         }
         finally { gate.Release(); }
     }
 
-    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, CancellationToken ct)
+    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, string? sourceRemoteUrl, CancellationToken ct)
     {
-        var result = await RunGitAsync(repositoryPath,
-            ["fetch", "origin",
-             $"{remoteRef}:refs/remotes/{localRef}",
-             $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+        GitResult result;
+        if (!string.IsNullOrEmpty(sourceRemoteUrl))
+        {
+            // The PR's source branch lives in a different repository (a fork) — "origin" doesn't
+            // have it. Always fetch the base branch from origin first, regardless of whether the
+            // fork fetch below succeeds, so the merge-commit fallback below always has an
+            // up-to-date local base branch to check against.
+            await RunGitAsync(repositoryPath, ["fetch", "origin", $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+            result = await RunGitAsync(repositoryPath, ["fetch", sourceRemoteUrl, $"{remoteRef}:refs/remotes/{localRef}"], ct);
+        }
+        else
+        {
+            result = await RunGitAsync(repositoryPath,
+                ["fetch", "origin",
+                 $"{remoteRef}:refs/remotes/{localRef}",
+                 $"refs/heads/{baseRefName}:refs/remotes/origin/{baseRefName}"], ct);
+        }
 
-        if (result.ExitCode == 0) return new PullRequestRefResolution(localRef, null);
+        if (result.ExitCode == 0)
+        {
+            var mergeBase = await GetMergeBaseAsync(repositoryPath, $"origin/{baseRefName}", localRef, ct);
+            return new PullRequestRefResolution(localRef, null, mergeBase);
+        }
 
         var err = result.StandardError.Trim();
 
@@ -209,6 +246,16 @@ public class GitService : IGitService
     }
 
     private static bool IsCommitSha(string value) => value.Length == 40 && value.All(Uri.IsHexDigit);
+
+    // The base branch keeps moving after a PR forks off it, so diffing against its current tip
+    // drags in every unrelated commit merged since as spurious deletions. The merge-base (fork
+    // point) isolates just the PR's own changes. Returns null (falling back to the raw base ref)
+    // if it can't be determined, e.g. unrelated histories.
+    private static async Task<string?> GetMergeBaseAsync(string repositoryPath, string baseRef, string compareRef, CancellationToken ct)
+    {
+        var result = await RunGitAsync(repositoryPath, ["merge-base", baseRef, compareRef], ct);
+        return result.ExitCode == 0 ? result.StandardOutput.Trim() : null;
+    }
 
     public async Task<List<DiffHunk>> GetFileHunksAsync(string repositoryPath, string baseBranch, string compareBranch, string filePath, int contextLines = 3, CancellationToken ct = default)
     {

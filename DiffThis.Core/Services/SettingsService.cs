@@ -38,6 +38,50 @@ public class SettingsService : ISettingsService
     private const string WindowMonitorRightKey  = "window_monitor_right";
     private const string WindowMonitorBottomKey = "window_monitor_bottom";
 
+    // The OAuth client secret is a genuine credential, unlike the other settings here, which are
+    // all non-secret preferences — Preferences is an unencrypted plist/registry-backed store, so
+    // it's kept in SecureStorage instead, with a cached in-memory copy since SecureStorage's API
+    // is async-only and this property is read synchronously by both the UI and BitbucketAuthService.
+    private string? _bitbucketOAuthClientSecretCache;
+    private readonly Task _bitbucketOAuthClientSecretLoad;
+
+    public SettingsService()
+    {
+        _bitbucketOAuthClientSecretLoad = LoadBitbucketOAuthClientSecretAsync();
+    }
+
+    // Callers that need the secret as soon as it's actually available (e.g. starting an OAuth
+    // flow) should await this instead of reading the property directly, since the constructor's
+    // load from SecureStorage is async and may not have finished yet.
+    public async Task<string> GetBitbucketOAuthClientSecretAsync()
+    {
+        await _bitbucketOAuthClientSecretLoad;
+        return _bitbucketOAuthClientSecretCache ?? "";
+    }
+
+    private async Task LoadBitbucketOAuthClientSecretAsync()
+    {
+        try
+        {
+            var secure = await SecureStorage.Default.GetAsync(BitbucketOAuthClientSecretKey);
+            if (!string.IsNullOrEmpty(secure))
+            {
+                _bitbucketOAuthClientSecretCache = secure;
+                return;
+            }
+        }
+        catch { /* best effort */ }
+
+        // Migrate a secret saved by an older version of DiffThis, which stored it in Preferences.
+        var legacy = Preferences.Get(BitbucketOAuthClientSecretKey, "");
+        if (!string.IsNullOrEmpty(legacy))
+        {
+            _bitbucketOAuthClientSecretCache = legacy;
+            try { await SecureStorage.Default.SetAsync(BitbucketOAuthClientSecretKey, legacy); } catch { /* best effort */ }
+            Preferences.Remove(BitbucketOAuthClientSecretKey);
+        }
+    }
+
     public event Action? ThemeChanged;
 
     public AppTheme Theme
@@ -178,8 +222,23 @@ public class SettingsService : ISettingsService
 
     public string BitbucketOAuthClientSecret
     {
-        get => Preferences.Get(BitbucketOAuthClientSecretKey, "");
-        set => Preferences.Set(BitbucketOAuthClientSecretKey, value);
+        get => _bitbucketOAuthClientSecretCache ?? "";
+        set
+        {
+            _bitbucketOAuthClientSecretCache = value;
+            Preferences.Remove(BitbucketOAuthClientSecretKey); // in case a legacy plaintext copy is still there
+            _ = StoreBitbucketOAuthClientSecretAsync(value);
+        }
+    }
+
+    private static async Task StoreBitbucketOAuthClientSecretAsync(string value)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(value)) SecureStorage.Default.Remove(BitbucketOAuthClientSecretKey);
+            else await SecureStorage.Default.SetAsync(BitbucketOAuthClientSecretKey, value);
+        }
+        catch { /* best effort */ }
     }
 
     public string AzureDevOpsOAuthClientId

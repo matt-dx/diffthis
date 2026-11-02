@@ -242,34 +242,39 @@ public class PullRequestService(
         var repoFullName = $"{workspace}/{repo}";
 
         return (page?.Values ?? [])
-            .Select(d => new PullRequestInfo
+            .Select(d =>
             {
-                Provider          = GitProviderKind.BitbucketCloud,
-                Number            = d.Id,
-                Title             = d.Title,
-                Author            = d.Author?.DisplayName ?? string.Empty,
-                BaseRefName       = d.Destination?.Branch?.Name ?? string.Empty,
-                HeadRefName       = d.Source?.Branch?.Name ?? string.Empty,
-                // Unlike Bitbucket Server, Bitbucket Cloud has no "refs/pull-requests/N/from"
-                // synthetic ref. While open, the source branch itself is still fetchable by name;
-                // once merged it may be deleted, so fall back to the exact source commit SHA
-                // instead (GitService falls back further still, to the merge commit, and then to
-                // checking whether the source commit came along for free with the destination
-                // branch's own history).
-                SourceRemoteRef   = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase)
-                    && d.Source?.Commit?.Hash is { Length: > 0 } sha
-                        ? sha
-                        : d.Source?.Branch?.Name ?? string.Empty,
-                MergeCommitSha    = d.MergeCommit?.Hash,
-                SourceAvailability = string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase)
-                    ? PullRequestSourceAvailability.Available
-                    : d.MergeCommit?.Hash is { Length: > 0 }
-                        ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
-                        : PullRequestSourceAvailability.Unknown,
-                IsCrossRepository = !string.Equals(d.Source?.Repository?.FullName, repoFullName, StringComparison.OrdinalIgnoreCase),
-                IsDraft           = false, // Bitbucket Cloud has no draft-PR concept
-                IsMerged          = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase),
-                UpdatedAt         = d.UpdatedOn,
+                var isCrossRepo = !string.Equals(d.Source?.Repository?.FullName, repoFullName, StringComparison.OrdinalIgnoreCase);
+                return new PullRequestInfo
+                {
+                    Provider          = GitProviderKind.BitbucketCloud,
+                    Number            = d.Id,
+                    Title             = d.Title,
+                    Author            = d.Author?.DisplayName ?? string.Empty,
+                    BaseRefName       = d.Destination?.Branch?.Name ?? string.Empty,
+                    HeadRefName       = d.Source?.Branch?.Name ?? string.Empty,
+                    // Unlike Bitbucket Server, Bitbucket Cloud has no "refs/pull-requests/N/from"
+                    // synthetic ref. While open, the source branch itself is still fetchable by name;
+                    // once merged it may be deleted, so fall back to the exact source commit SHA
+                    // instead (GitService falls back further still, to the merge commit, and then to
+                    // checking whether the source commit came along for free with the destination
+                    // branch's own history).
+                    SourceRemoteRef   = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase)
+                        && d.Source?.Commit?.Hash is { Length: > 0 } sha
+                            ? sha
+                            : d.Source?.Branch?.Name ?? string.Empty,
+                    MergeCommitSha    = d.MergeCommit?.Hash,
+                    SourceAvailability = string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase)
+                        ? PullRequestSourceAvailability.Available
+                        : d.MergeCommit?.Hash is { Length: > 0 }
+                            ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
+                            : PullRequestSourceAvailability.Unknown,
+                    SourceRemoteUrl   = isCrossRepo ? BuildCloneUrl(remoteUrl, d.Source?.Repository?.FullName) : null,
+                    IsCrossRepository = isCrossRepo,
+                    IsDraft           = false, // Bitbucket Cloud has no draft-PR concept
+                    IsMerged          = string.Equals(d.State, "MERGED", StringComparison.OrdinalIgnoreCase),
+                    UpdatedAt         = d.UpdatedOn,
+                };
             })
             .OrderByDescending(p => p.UpdatedAt)
             .ToList();
@@ -283,19 +288,24 @@ public class PullRequestService(
         var (project, repo) = ParseOwnerRepo(remoteUrl)
             ?? throw new InvalidOperationException("Could not determine the project/repository from this repository's remote.");
 
-        var url = $"{apiBase}/rest/api/1.0/projects/{project}/repos/{repo}/pull-requests?state=ALL&limit=100";
+        // Filtering state=ALL client-side after limit=100 can bury an older PR of the requested
+        // state behind up to 100 newer PRs of another state. Query each relevant state server-side
+        // instead — the API only accepts one state per request.
+        var states = state == PullRequestState.Open ? ["OPEN"] : new[] { "MERGED", "DECLINED" };
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var dtos = new List<BitbucketServerPrDto>();
+        foreach (var s in states)
+        {
+            var url = $"{apiBase}/rest/api/1.0/projects/{project}/repos/{repo}/pull-requests?state={s}&limit=100";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var resp = await SendAsync(req, "Bitbucket Server", ct);
-        var page = await resp.Content.ReadFromJsonAsync<BitbucketServerPageDto>(SnakeCase, ct);
+            var resp = await SendAsync(req, "Bitbucket Server", ct);
+            var page = await resp.Content.ReadFromJsonAsync<BitbucketServerPageDto>(CamelCase, ct);
+            dtos.AddRange(page?.Values ?? []);
+        }
 
-        var items = (page?.Values ?? []).Where(d => state == PullRequestState.Open
-            ? string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase)
-            : !string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase));
-
-        return items
+        return dtos
             .Select(d => new PullRequestInfo
             {
                 Provider        = GitProviderKind.BitbucketServer,
@@ -323,19 +333,24 @@ public class PullRequestService(
         var (org, project, repo) = ParseAzureDevOpsRemote(remoteUrl)
             ?? throw new InvalidOperationException("Could not determine the organization/project/repository from this repository's remote.");
 
-        var url = $"https://dev.azure.com/{Uri.EscapeDataString(org)}/{Uri.EscapeDataString(project)}/_apis/git/repositories/{Uri.EscapeDataString(repo)}/pullrequests?searchCriteria.status=all&api-version=7.1&$top=100";
+        // Filtering searchCriteria.status=all client-side after $top=100 can bury an older PR of
+        // the requested status behind up to 100 newer PRs of another status. Query each relevant
+        // status server-side instead.
+        var statuses = state == PullRequestState.Open ? ["active"] : new[] { "completed", "abandoned" };
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = authHeader;
+        var dtos = new List<AdoPrDto>();
+        foreach (var s in statuses)
+        {
+            var url = $"https://dev.azure.com/{Uri.EscapeDataString(org)}/{Uri.EscapeDataString(project)}/_apis/git/repositories/{Uri.EscapeDataString(repo)}/pullrequests?searchCriteria.status={s}&api-version=7.1&$top=100";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Authorization = authHeader;
 
-        var resp = await SendAsync(req, "Azure DevOps", ct);
-        var page = await resp.Content.ReadFromJsonAsync<AdoPageDto>(CamelCase, ct);
+            var resp = await SendAsync(req, "Azure DevOps", ct);
+            var page = await resp.Content.ReadFromJsonAsync<AdoPageDto>(CamelCase, ct);
+            dtos.AddRange(page?.Value ?? []);
+        }
 
-        var items = (page?.Value ?? []).Where(d => state == PullRequestState.Open
-            ? string.Equals(d.Status, "active", StringComparison.OrdinalIgnoreCase)
-            : !string.Equals(d.Status, "active", StringComparison.OrdinalIgnoreCase));
-
-        return items
+        return dtos
             .Select(d => new PullRequestInfo
             {
                 Provider        = GitProviderKind.AzureDevOps,
@@ -360,12 +375,29 @@ public class PullRequestService(
                     : d.LastMergeCommit?.CommitId is { Length: > 0 }
                         ? PullRequestSourceAvailability.ReconstructableFromMergeCommit
                         : PullRequestSourceAvailability.Unknown,
+                SourceRemoteUrl = d.ForkSource?.Repository?.RemoteUrl,
+                IsCrossRepository = d.ForkSource is not null,
                 IsDraft         = d.IsDraft,
                 IsMerged        = string.Equals(d.Status, "completed", StringComparison.OrdinalIgnoreCase),
                 UpdatedAt       = d.CreationDate,
             })
             .OrderByDescending(p => p.UpdatedAt)
             .ToList();
+    }
+
+    /// Builds a fork's clone URL by substituting its full path into origin's own host and scheme
+    /// (SSH or HTTPS) — a fork lives on the same host, and matching origin's scheme means the
+    /// same locally-configured git credentials (SSH key or credential helper) apply to it too.
+    private static string? BuildCloneUrl(string originUrl, string? fullName)
+    {
+        if (string.IsNullOrEmpty(fullName)) return null;
+
+        var scp = Regex.Match(originUrl, @"^(?<user>[\w.-]+)@(?<host>[^:/]+):");
+        if (scp.Success) return $"{scp.Groups["user"].Value}@{scp.Groups["host"].Value}:{fullName}.git";
+
+        if (!Uri.TryCreate(originUrl, UriKind.Absolute, out var uri)) return null;
+        var port = uri.IsDefaultPort ? "" : $":{uri.Port}";
+        return $"{uri.Scheme}://{uri.Host}{port}/{fullName}.git";
     }
 
     private static string StripRefsHeads(string? refName) =>
@@ -597,9 +629,14 @@ public class PullRequestService(
         public DateTimeOffset CreationDate { get; set; }
         public AdoCommitRefDto? LastMergeSourceCommit { get; set; }
         public AdoCommitRefDto? LastMergeCommit { get; set; }
+        public AdoForkSourceDto? ForkSource { get; set; }
     }
 
     private sealed class AdoCommitRefDto { public string CommitId { get; set; } = string.Empty; }
 
     private sealed class AdoUserDto { public string DisplayName { get; set; } = string.Empty; }
+
+    private sealed class AdoForkSourceDto { public AdoRepoDto? Repository { get; set; } }
+
+    private sealed class AdoRepoDto { public string? RemoteUrl { get; set; } }
 }

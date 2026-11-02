@@ -39,6 +39,7 @@ public interface ISettingsService
     string BitbucketUsername { get; set; }  // Atlassian account email used with the API token; default ""
     string BitbucketOAuthClientId { get; set; }  // optional override OAuth consumer Key; default ""
     string BitbucketOAuthClientSecret { get; set; }  // optional override OAuth consumer Secret; default ""
+    Task<string> GetBitbucketOAuthClientSecretAsync();  // like the getter above, but waits for the SecureStorage load to finish
 
     // ── Azure DevOps (pull requests) ────────────────────────────────────────
     string AzureDevOpsOAuthClientId { get; set; }  // optional override Entra ID app (client) ID; default ""

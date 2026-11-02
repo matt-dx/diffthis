@@ -66,21 +66,6 @@ public class AzureDevOpsAuthService : IAzureDevOpsAuthService
 
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get,
-                "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1");
-            req.Headers.Authorization = new AuthenticationHeaderValue("Basic",
-                Convert.ToBase64String(Encoding.UTF8.GetBytes($":{personalAccessToken}")));
-
-            var resp = await _http.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode)
-            {
-                LastError = (int)resp.StatusCode is 401 or 403
-                    ? "Azure DevOps rejected that Personal Access Token."
-                    : $"Azure DevOps sign-in failed: HTTP {(int)resp.StatusCode}";
-                StateChanged?.Invoke();
-                return false;
-            }
-
             if (!await TryStoreAsync(TokenKey, personalAccessToken))
             {
                 LastError = "Unable to securely store the Azure DevOps token on this device.";
@@ -88,8 +73,16 @@ public class AzureDevOpsAuthService : IAzureDevOpsAuthService
                 return false;
             }
 
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            Username = doc.RootElement.TryGetProperty("displayName", out var name) ? name.GetString() : null;
+            // GetAuthHeaderAsync prefers an unexpired OAuth token over the PAT — without clearing
+            // it, signing in here after a rejected OAuth token keeps sending that rejected token.
+            try { SecureStorage.Default.Remove(OAuthTokenKey); } catch { /* best effort */ }
+
+            // The profile endpoint this used to validate against needs profile-read access, which
+            // a Code-scoped PAT (what the sign-in form asks users to create) doesn't grant — that
+            // rejected otherwise-valid tokens outright. Mirror Bitbucket's token flow: don't
+            // validate upfront, just read the display name best-effort, and let a real PR request
+            // surface bad credentials.
+            await TryReadUsernameFromPatAsync(personalAccessToken, ct);
 
             State     = AzureDevOpsAuthState.Authenticated;
             LastError = null;
@@ -207,6 +200,24 @@ public class AzureDevOpsAuthService : IAzureDevOpsAuthService
         {
             try { listener?.Stop(); listener?.Close(); } catch { /* best effort */ }
         }
+    }
+
+    private async Task TryReadUsernameFromPatAsync(string pat, CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes($":{pat}")));
+
+            var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            Username = doc.RootElement.TryGetProperty("displayName", out var name) ? name.GetString() : null;
+        }
+        catch { /* best effort — a Code-scoped PAT may not grant profile-read access */ }
     }
 
     private async Task TryReadUsernameAsync(string accessToken, CancellationToken ct)

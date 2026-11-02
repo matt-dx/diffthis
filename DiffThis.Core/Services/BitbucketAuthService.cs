@@ -99,6 +99,11 @@ public class BitbucketAuthService : IBitbucketAuthService
                 return false;
             }
 
+            // GetAuthHeaderAsync prefers an unexpired OAuth token over these credentials — without
+            // clearing it, signing in here after a rejected OAuth token keeps sending that same
+            // rejected token instead of the one just entered.
+            try { SecureStorage.Default.Remove(OAuthTokenKey); } catch { /* best effort */ }
+
             _settings.BitbucketUsername = username;
             Username  = username;
             State     = BitbucketAuthState.Authenticated;
@@ -119,7 +124,7 @@ public class BitbucketAuthService : IBitbucketAuthService
 
     public async Task<bool> SignInWithBrowserAsync(CancellationToken ct = default)
     {
-        var (clientId, clientSecret) = ResolveOAuthClient();
+        var (clientId, clientSecret) = await ResolveOAuthClientAsync();
         if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
         {
             LastError = "Add a Bitbucket OAuth client Key and Secret under Settings first.";
@@ -130,7 +135,12 @@ public class BitbucketAuthService : IBitbucketAuthService
         HttpListener? listener = null;
         try
         {
-            var (listenerStarted, port) = OAuthLoopback.StartListener([CallbackPort], "/callback/");
+            // HttpListener prefix matching is strict about trailing slashes — a prefix of
+            // "/callback/" never matches a request for "/callback" (no trailing slash), which is
+            // exactly what the OAuth redirect below sends. Listen at the root instead; the
+            // redirect URI still must stay "http://localhost:{port}/callback" to match the
+            // consumer's registered Callback URL exactly.
+            var (listenerStarted, port) = OAuthLoopback.StartListener([CallbackPort], "/");
             listener = listenerStarted;
             var redirectUri = $"http://localhost:{port}/callback";
 
@@ -246,7 +256,7 @@ public class BitbucketAuthService : IBitbucketAuthService
 
         if (string.IsNullOrEmpty(tokens.RefreshToken)) return null;
 
-        var (clientId, clientSecret) = ResolveOAuthClient();
+        var (clientId, clientSecret) = await ResolveOAuthClientAsync();
         if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret)) return null;
 
         try
@@ -337,10 +347,10 @@ public class BitbucketAuthService : IBitbucketAuthService
         }
     }
 
-    private (string ClientId, string ClientSecret) ResolveOAuthClient()
+    private async Task<(string ClientId, string ClientSecret)> ResolveOAuthClientAsync()
     {
         var clientId     = _settings.BitbucketOAuthClientId.Trim();
-        var clientSecret = _settings.BitbucketOAuthClientSecret.Trim();
+        var clientSecret = (await _settings.GetBitbucketOAuthClientSecretAsync()).Trim();
         if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret))
             return (clientId, clientSecret);
 
