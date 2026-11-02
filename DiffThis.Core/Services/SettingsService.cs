@@ -27,6 +27,8 @@ public class SettingsService : ISettingsService
     private const string OllamaEndpointsKey      = "ollama_endpoints";
     private const string AnalysisLinksKey        = "analysis_links_enabled";
     private const string AiLoggingKey            = "ai_logging_enabled";
+    private const string AutoRefreshModelsEnabledKey  = "auto_refresh_models_enabled";
+    private const string AutoRefreshModelsHoursKey    = "auto_refresh_models_interval_hours";
     private const string WindowXKey             = "window_x";
     private const string WindowYKey             = "window_y";
     private const string WindowWidthKey         = "window_width";
@@ -212,6 +214,18 @@ public class SettingsService : ISettingsService
         get => Preferences.Get(AiLoggingKey, false);
 #endif
         set => Preferences.Set(AiLoggingKey, value);
+    }
+
+    public bool AutoRefreshModelsEnabled
+    {
+        get => Preferences.Get(AutoRefreshModelsEnabledKey, true);
+        set => Preferences.Set(AutoRefreshModelsEnabledKey, value);
+    }
+
+    public int AutoRefreshModelsIntervalHours
+    {
+        get => Preferences.Get(AutoRefreshModelsHoursKey, 24);
+        set => Preferences.Set(AutoRefreshModelsHoursKey, value);
     }
 
     public int WindowX             { get => Preferences.Get(WindowXKey,             -1);    set => Preferences.Set(WindowXKey,             value); }

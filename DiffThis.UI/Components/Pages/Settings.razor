@@ -23,7 +23,7 @@
     <span class="settings-header-title">Settings</span>
 </div>
 <div class="settings-body">
-<div class="page narrow">
+<div class="page settings-page">
 
     <div class="mode-toggle">
         <button class="btn btn-sm @(_activeTab == SettingsTab.General ? "btn-active" : "")" @onclick="() => _activeTab = SettingsTab.General">General</button>
@@ -63,6 +63,38 @@
 
     @if (_activeTab == SettingsTab.AiIntegration)
     {
+    <section class="settings-section">
+        <p class="section-title">Automatic Model Refresh</p>
+        <div class="setting-card">
+            <div class="setting-row">
+                <div>
+                    <p class="setting-label">Refresh model lists in the background</p>
+                    <p class="setting-desc">Periodically re-fetch the available models for Claude, Copilot, and OpenAI on startup, instead of relying on the last cached list.</p>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" @bind="autoRefreshModelsEnabled" @bind:after="SaveAutoRefreshModelsEnabled" />
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            @if (autoRefreshModelsEnabled)
+            {
+            <div class="setting-row" style="margin-top:12px">
+                <div>
+                    <p class="setting-label">Refresh if older than</p>
+                    <p class="setting-desc">How long a cached model list can go stale before it's refreshed again on startup.</p>
+                </div>
+                <select class="select-sm" @bind="autoRefreshModelsIntervalHours" @bind:after="SaveAutoRefreshModelsIntervalHours">
+                    <option value="1">1 hour</option>
+                    <option value="6">6 hours</option>
+                    <option value="24">1 day</option>
+                    <option value="72">3 days</option>
+                    <option value="168">1 week</option>
+                </select>
+            </div>
+            }
+        </div>
+    </section>
+
     <section class="settings-section">
         <p class="section-title"><span class="icon icon-claude" style="width:2em;height:2em;vertical-align:-0.4em;margin-right:0.35em;color:#e07b39"></span>Claude AI</p>
         <div class="setting-card">
@@ -1169,6 +1201,8 @@
     private int  aiMaxTurns;
     private bool analysisLinksEnabled;
     private bool aiLoggingEnabled;
+    private bool autoRefreshModelsEnabled;
+    private int  autoRefreshModelsIntervalHours;
     private bool           _showClearLogsConfirm;
     private bool           _showClearRepoHistoryConfirm;
     private bool           _showClearCacheConfirm;
@@ -1224,6 +1258,8 @@
         aiMaxTurns            = Svc.AiMaxTurns;
         analysisLinksEnabled  = Svc.AnalysisLinksEnabled;
         aiLoggingEnabled      = Svc.AiLoggingEnabled;
+        autoRefreshModelsEnabled       = Svc.AutoRefreshModelsEnabled;
+        autoRefreshModelsIntervalHours = Svc.AutoRefreshModelsIntervalHours;
 
         ModelService.ModelsChanged        += OnModelsChanged;
         CopilotModelService.ModelsChanged += OnModelsChanged;
@@ -1370,6 +1406,8 @@
     private void SaveDiffContextLines() => Svc.DiffContextLines = diffContextLines;
     private void SaveAiTools()        => Svc.AiToolsEnabled      = aiToolsEnabled;
     private void SaveAiMaxTurns()     => Svc.AiMaxTurns           = aiMaxTurns;
+    private void SaveAutoRefreshModelsEnabled()       => Svc.AutoRefreshModelsEnabled       = autoRefreshModelsEnabled;
+    private void SaveAutoRefreshModelsIntervalHours() => Svc.AutoRefreshModelsIntervalHours = autoRefreshModelsIntervalHours;
     private void SaveAnalysisLinks()  => Svc.AnalysisLinksEnabled = analysisLinksEnabled;
     private void SaveAiLogging()      => Svc.AiLoggingEnabled     = aiLoggingEnabled;
 

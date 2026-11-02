@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using DiffThis.AI.OpenAI.Models;
+using DiffThis.Core.Services;
 
 namespace DiffThis.AI.OpenAI.Services;
 
@@ -29,6 +30,7 @@ public class CopilotModelService : ICopilotModelService
     ];
 
     private readonly ICopilotAuthService _auth;
+    private readonly ISettingsService    _settings;
     private readonly HttpClient          _http = new();
 
     private List<CopilotModel> _models = [];
@@ -41,12 +43,15 @@ public class CopilotModelService : ICopilotModelService
 
     public event Action? ModelsChanged;
 
-    public CopilotModelService(ICopilotAuthService auth)
+    public CopilotModelService(ICopilotAuthService auth, ISettingsService settings)
     {
-        _auth = auth;
+        _auth     = auth;
+        _settings = settings;
         Load();
 
-        if (_models.Count == 0)
+        // Retry on every launch while still on the hardcoded fallback list (e.g. auth
+        // wasn't ready yet last time), even if that fallback was "fetched" recently.
+        if (IsUsingDefaults || ModelAutoRefresh.ShouldRefresh(_models.Count, LastFetchedAt, _settings))
             _ = RefreshAsync();
     }
 
@@ -414,11 +419,11 @@ public class CopilotModelService : ICopilotModelService
     {
         try
         {
-            var json = Preferences.Get(ModelsKey, "[]");
+            var json = LocalJsonStore.Get(ModelsKey, "[]");
             _models = JsonSerializer.Deserialize<List<CopilotModel>>(json) ?? [];
-            var ts  = Preferences.Get(FetchedAtKey, "");
+            var ts  = LocalJsonStore.Get(FetchedAtKey, "");
             LastFetchedAt   = string.IsNullOrEmpty(ts) ? null : DateTime.Parse(ts).ToUniversalTime();
-            IsUsingDefaults = Preferences.Get(SourceKey, "defaults") == "defaults";
+            IsUsingDefaults = LocalJsonStore.Get(SourceKey, "defaults") == "defaults";
         }
         catch { _models = []; }
     }
@@ -427,9 +432,9 @@ public class CopilotModelService : ICopilotModelService
     {
         try
         {
-            Preferences.Set(ModelsKey,    JsonSerializer.Serialize(_models));
-            Preferences.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
-            Preferences.Set(SourceKey,    IsUsingDefaults ? "defaults" : "api");
+            LocalJsonStore.Set(ModelsKey,    JsonSerializer.Serialize(_models));
+            LocalJsonStore.Set(FetchedAtKey, LastFetchedAt?.ToString("O") ?? "");
+            LocalJsonStore.Set(SourceKey,    IsUsingDefaults ? "defaults" : "api");
         }
         catch { /* best effort */ }
     }

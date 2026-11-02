@@ -52,6 +52,10 @@ public interface ISettingsService
     // ── Logging ────────────────────────────────────────────────────────────
     bool AiLoggingEnabled { get; set; }  // default: true in Debug, false in Release
 
+    // ── AI model auto-refresh ─────────────────────────────────────────────
+    bool AutoRefreshModelsEnabled       { get; set; }  // default: true
+    int  AutoRefreshModelsIntervalHours { get; set; }  // default: 24
+
     // ── Unsupported / experimental features ───────────────────────────────
     bool AnalysisLinksEnabled { get; set; }  // default: false
 
