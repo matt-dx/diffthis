@@ -42,6 +42,13 @@ public class PullRequestInfo
     /// resolve an unrelated same-named ref there instead, or fail outright.
     public string? SourceRemoteUrl { get; set; }
 
+    /// The exact source commit at the time this PR was closed (Bitbucket Cloud's/Azure DevOps's
+    /// recorded source commit), when the provider exposes one regardless of merge state. Used in
+    /// place of <see cref="SourceRemoteRef"/>'s live branch tip once fetched, so a PR closed
+    /// without merging still diffs what it actually contained even if the branch moved on or was
+    /// reused for a later PR since.
+    public string? SourcePinnedCommit { get; set; }
+
     public bool IsCrossRepository { get; set; }
     public bool IsDraft { get; set; }
     public bool IsMerged { get; set; }

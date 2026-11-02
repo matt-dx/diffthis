@@ -20,7 +20,16 @@ public interface IGitService
     /// <paramref name="mergeCommitSha"/> is supplied and still reachable, the result instead points
     /// at that merge commit with a BaseRefOverride of its own parent — diffing those two reproduces
     /// the same file changes without needing the original source commits at all.
-    /// When <paramref name="sourceRemoteUrl"/> is supplied (the PR's source is a fork), the compare
-    /// ref is fetched from that URL directly instead of "origin", which doesn't have it.
-    Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, CancellationToken ct = default);
+    /// When <paramref name="sourceRemoteUrl"/> is supplied (the PR's source is a fork and
+    /// <paramref name="remoteRef"/> isn't a synthetic ref the destination keeps on its own), the
+    /// compare ref is fetched from that URL directly instead of "origin", which doesn't have it.
+    /// <paramref name="isCrossRepository"/> only matters when <paramref name="remoteRef"/> is a
+    /// plain branch name or commit SHA (Bitbucket Cloud, Azure DevOps) — a synthetic PR/MR ref
+    /// (refs/pull/N/head etc.) is always fetchable from "origin" regardless of where the source
+    /// branch actually lives, so cross-repo GitHub/GitLab/Gitea/Bitbucket Server PRs need no URL.
+    /// <paramref name="sourcePinnedCommit"/>, when supplied, is used as the compare commit instead
+    /// of <paramref name="localRef"/> once fetched and reachable — for a closed-without-merging PR
+    /// whose source branch may have moved on or been reused since, this pins the diff to what the
+    /// PR actually contained.
+    Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, string? sourcePinnedCommit = null, CancellationToken ct = default);
 }

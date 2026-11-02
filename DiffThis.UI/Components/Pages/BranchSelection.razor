@@ -835,7 +835,7 @@
         try
         {
             var localRef   = $"pr/{pr.Provider}/{pr.Number}";
-            var resolution = await GitService.FetchPullRequestRefAsync(RepoPath, pr.SourceRemoteRef, localRef, pr.BaseRefName, pr.MergeCommitSha, pr.SourceRemoteUrl, pr.IsCrossRepository);
+            var resolution = await GitService.FetchPullRequestRefAsync(RepoPath, pr.SourceRemoteRef, localRef, pr.BaseRefName, pr.MergeCommitSha, pr.SourceRemoteUrl, pr.IsCrossRepository, pr.SourcePinnedCommit);
             var baseRef    = resolution.BaseRefOverride ?? resolution.MergeBase ?? $"origin/{pr.BaseRefName}";
 
             Session.CurrentDiff = await GitService.GetDiffAsync(RepoPath, baseRef, resolution.CompareRef, contextLines: Settings.DiffContextLines);

@@ -263,6 +263,10 @@ public class PullRequestService(
                         && d.Source?.Commit?.Hash is { Length: > 0 } sha
                             ? sha
                             : d.Source?.Branch?.Name ?? string.Empty,
+                    // Recorded regardless of state — for a MERGED PR the fetch above already uses
+                    // it directly; for a DECLINED one it's the exact content the PR had, pinning
+                    // the diff against a branch that may have moved on or been reused since.
+                    SourcePinnedCommit = d.Source?.Commit?.Hash,
                     MergeCommitSha    = d.MergeCommit?.Hash,
                     SourceAvailability = string.Equals(d.State, "OPEN", StringComparison.OrdinalIgnoreCase)
                         ? PullRequestSourceAvailability.Available
@@ -369,6 +373,10 @@ public class PullRequestService(
                     && d.LastMergeSourceCommit?.CommitId is { Length: > 0 } sha
                         ? sha
                         : d.SourceRefName,
+                // Recorded regardless of status — for a completed PR the fetch above already uses
+                // it directly; for an abandoned one it's the exact content the PR had, pinning the
+                // diff against a branch that may have moved on or been reused since.
+                SourcePinnedCommit = d.LastMergeSourceCommit?.CommitId,
                 MergeCommitSha  = d.LastMergeCommit?.CommitId,
                 SourceAvailability = string.Equals(d.Status, "active", StringComparison.OrdinalIgnoreCase)
                     ? PullRequestSourceAvailability.Available
@@ -396,8 +404,9 @@ public class PullRequestService(
         if (scp.Success) return $"{scp.Groups["user"].Value}@{scp.Groups["host"].Value}:{fullName}.git";
 
         if (!Uri.TryCreate(originUrl, UriKind.Absolute, out var uri)) return null;
-        var port = uri.IsDefaultPort ? "" : $":{uri.Port}";
-        return $"{uri.Scheme}://{uri.Host}{port}/{fullName}.git";
+        var userInfo = string.IsNullOrEmpty(uri.UserInfo) ? "" : $"{uri.UserInfo}@";
+        var port     = uri.IsDefaultPort ? "" : $":{uri.Port}";
+        return $"{uri.Scheme}://{userInfo}{uri.Host}{port}/{fullName}.git";
     }
 
     private static string StripRefsHeads(string? refName) =>

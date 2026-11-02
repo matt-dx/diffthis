@@ -165,9 +165,15 @@ public class GitService : IGitService
         };
     }
 
-    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, CancellationToken ct = default)
+    public async Task<PullRequestRefResolution> FetchPullRequestRefAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha = null, string? sourceRemoteUrl = null, bool isCrossRepository = false, string? sourcePinnedCommit = null, CancellationToken ct = default)
     {
-        if (isCrossRepository && string.IsNullOrEmpty(sourceRemoteUrl))
+        // A synthetic PR/MR ref (refs/pull/N/head, refs/merge-requests/N/head,
+        // refs/pull-requests/N/from) is always fetchable from the destination's own "origin",
+        // even for a fork PR — GitHub/GitLab/Gitea/Bitbucket Server keep it there regardless of
+        // where the source branch actually lives. Only a plain branch name or raw commit SHA
+        // (Bitbucket Cloud, Azure DevOps — neither has a synthetic ref) actually requires the
+        // fork's own clone URL.
+        if (isCrossRepository && string.IsNullOrEmpty(sourceRemoteUrl) && !remoteRef.StartsWith("refs/", StringComparison.Ordinal))
             throw new InvalidOperationException(
                 "This pull request's source is a fork, but its clone URL couldn't be determined, " +
                 "so its changes can't be fetched.");
@@ -176,12 +182,12 @@ public class GitService : IGitService
         await gate.WaitAsync(ct);
         try
         {
-            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, sourceRemoteUrl, ct);
+            return await FetchPullRequestRefCoreAsync(repositoryPath, remoteRef, localRef, baseRefName, mergeCommitSha, sourceRemoteUrl, sourcePinnedCommit, ct);
         }
         finally { gate.Release(); }
     }
 
-    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, string? sourceRemoteUrl, CancellationToken ct)
+    private async Task<PullRequestRefResolution> FetchPullRequestRefCoreAsync(string repositoryPath, string remoteRef, string localRef, string baseRefName, string? mergeCommitSha, string? sourceRemoteUrl, string? sourcePinnedCommit, CancellationToken ct)
     {
         GitResult result;
         if (!string.IsNullOrEmpty(sourceRemoteUrl))
@@ -203,8 +209,29 @@ public class GitService : IGitService
 
         if (result.ExitCode == 0)
         {
-            var mergeBase = await GetMergeBaseAsync(repositoryPath, $"origin/{baseRefName}", localRef, ct);
-            return new PullRequestRefResolution(localRef, null, mergeBase);
+            // A merged PR's compare ref (e.g. refs/pull/N/head) is now an ancestor of the base
+            // branch's current tip, so merge-base(base, compareRef) is just compareRef itself —
+            // diffing it against its own merge-base would show nothing. Reuse the already-proven
+            // mergeCommitSha^/mergeCommitSha pair from the fallback below instead: it reproduces
+            // the PR's full set of changes regardless of how far the base branch has moved since.
+            if (mergeCommitSha is { Length: > 0 })
+            {
+                var verifyMerge = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{mergeCommitSha}^{{commit}}"], ct);
+                if (verifyMerge.ExitCode == 0) return new PullRequestRefResolution(mergeCommitSha, $"{mergeCommitSha}^");
+            }
+
+            // For a closed-without-merging PR (declined/abandoned), the source branch may have
+            // moved on or been reused since — pin to the exact commit the PR actually contained
+            // when it was open, if the provider recorded one and it's still reachable.
+            var compareRef = localRef;
+            if (sourcePinnedCommit is { Length: > 0 })
+            {
+                var verifyPinned = await RunGitAsync(repositoryPath, ["cat-file", "-e", $"{sourcePinnedCommit}^{{commit}}"], ct);
+                if (verifyPinned.ExitCode == 0) compareRef = sourcePinnedCommit;
+            }
+
+            var mergeBase = await GetMergeBaseAsync(repositoryPath, $"origin/{baseRefName}", compareRef, ct);
+            return new PullRequestRefResolution(compareRef, null, mergeBase);
         }
 
         var err = result.StandardError.Trim();
